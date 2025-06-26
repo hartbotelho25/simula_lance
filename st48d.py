@@ -6,6 +6,19 @@ import io
 def format_reais(valor):
     return f"R$ {int(round(valor)):,}".replace(",", ".")
 
+# Função para formatar o input do valor da carta com pontos de milhar
+def format_input_valor(valor_str):
+    if not valor_str:
+        return ""
+    # Remove todos os caracteres não numéricos, exceto a vírgula (que será substituída por ponto)
+    valor_limpo = valor_str.replace("R$", "").replace(" ", "").replace(".", "").replace(",", ".")
+    try:
+        valor_float = float(valor_limpo)
+        # Formata para inteiro para evitar casas decimais indesejadas na formatação de milhar
+        return f"{int(valor_float):,}".replace(",", ".")
+    except ValueError:
+        return valor_str # Retorna o valor original se não for um número válido
+
 st.set_page_config(page_title="Simulador de Consórcio", layout="wide")
 st.markdown("<h6 style='text-align: center; color: gray;'>Desenvolvido por Hart Botelho</h6>", unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
@@ -17,7 +30,11 @@ with col_form:
     tipo = st.selectbox("Tipo de Bem", ["Imóvel", "Veículo"])
     col1, col2 = st.columns(2)
     with col1:
-        valor_carta = st.text_input("Valor da Carta (R$)", value="100.000,00")
+        # Usando um callback para formatar o input
+        valor_carta_input = st.text_input("Valor da Carta (R$)", value="100.000", key="valor_carta_raw")
+        valor_carta_formatado = format_input_valor(valor_carta_input)
+        st.session_state.valor_carta = valor_carta_formatado # Armazena o valor formatado para uso
+
         prazo = st.number_input("Prazo (meses)", min_value=1, step=1, value=120)
     with col2:
         fundo_reserva = st.number_input("Fundo de Reserva (%)", min_value=0, step=1, value=3)
@@ -27,7 +44,8 @@ with col_form:
 
 with col_lance:
     try:
-        valor_carta_float_preview = float(valor_carta.replace(".", "").replace(",", "."))
+        # Usa o valor armazenado em session_state para garantir que está formatado corretamente
+        valor_carta_float_preview = float(st.session_state.valor_carta.replace(".", "").replace(",", "."))
     except:
         valor_carta_float_preview = 0.0
 
@@ -48,9 +66,14 @@ with col_lance:
     with col_com2:
         lance_embutido = st.number_input("Lance Embutido (%)", min_value=0, max_value=100, step=1, value=20, key="com_lance_embutido")
 
-    valor_corrigido_preview = valor_carta_float_preview * (1 + (lance_embutido / 100))
-    valor_lance_proprio_com = valor_corrigido_preview * (lance_proprio_com / 100)
-    valor_lance_embutido_com = valor_corrigido_preview * (lance_embutido / 100)
+    # Calcula o 'valor da carta' ajustado para que o crédito líquido após o lance embutido seja valor_carta_float_preview
+    if (1 - (lance_embutido / 100)) > 0:
+        valor_carta_ajustado_com_embutido_preview = valor_carta_float_preview / (1 - (lance_embutido / 100))
+    else:
+        valor_carta_ajustado_com_embutido_preview = valor_carta_float_preview
+
+    valor_lance_proprio_com = valor_carta_ajustado_com_embutido_preview * (lance_proprio_com / 100)
+    valor_lance_embutido_com = valor_carta_ajustado_com_embutido_preview * (lance_embutido / 100)
 
     col_com3, col_com4 = st.columns([1, 1])
     with col_com3:
@@ -63,20 +86,30 @@ with col_lance:
     valor_total_lance_com = valor_lance_proprio_com + valor_lance_embutido_com
     total_lance_pct = lance_proprio_com + lance_embutido
     st.markdown(f"💰 **Total do Lance com Embutido: {int(total_lance_pct)}% — {format_reais(valor_total_lance_com)}**")
-    st.caption(f"📌 Base de cálculo (carta corrigida): {format_reais(valor_corrigido_preview)}")
 
-limite_embutido = 0.3 if tipo == "Imóvel" else 0.5
+    # Destaque para a base de cálculo da carta ajustada
+    st.markdown(f"### <p style='text-align: center; color: #2c3e50;'>Base de Cálculo (Carta Ajustada): {format_reais(valor_carta_ajustado_com_embutido_preview)}</p>", unsafe_allow_html=True)
+    st.caption(f"✨ Valor Líquido de Crédito Desejado: {format_reais(valor_carta_float_preview)}")
+
+
+# Ajuste dos limites do lance embutido
+limite_embutido = 0.50 if tipo == "Imóvel" else 0.30
 erro_embutido = False
 if lance_embutido / 100 > limite_embutido:
     st.error(f"🚫 O lance embutido informado ({lance_embutido}%) ultrapassa o limite permitido para {tipo.lower()}. 👉 Para {tipo.lower()}, o máximo permitido é {int(limite_embutido * 100)}%. Corrija o valor para continuar.")
     erro_embutido = True
+elif lance_embutido == 100:
+    st.error("🚫 O lance embutido não pode ser 100%, pois não haveria valor de carta para ajuste.")
+    erro_embutido = True
 
 if calcular and not erro_embutido:
     try:
-        valor_carta_float = float(valor_carta.replace(".", "").replace(",", "."))
-        valor_corrigido = valor_carta_float * (1 + (lance_embutido / 100))
+        # Usa o valor armazenado em session_state para garantir que está formatado corretamente
+        valor_carta_float = float(st.session_state.valor_carta.replace(".", "").replace(",", "."))
+
         taxa_total = taxa_admin + fundo_reserva
 
+        # Cálculos para "SEM LANCE EMBUTIDO"
         total_sem_lance = valor_carta_float * (1 + taxa_total / 100)
         parcela_sem_lance = total_sem_lance / prazo
 
@@ -84,17 +117,28 @@ if calcular and not erro_embutido:
         saldo_apos_padrao = total_sem_lance - valor_lance_padrao
         parcela_padrao = saldo_apos_padrao / prazo
 
-        total_corrigido = valor_corrigido * (1 + taxa_total / 100)
+        # Calcula o 'valor da carta' ajustado para o cenário "COM LANCE EMBUTIDO"
+        if (1 - (lance_embutido / 100)) > 0:
+            valor_carta_ajustado_para_embutido = valor_carta_float / (1 - (lance_embutido / 100))
+        else:
+            valor_carta_ajustado_para_embutido = valor_carta_float
+
+
+        total_corrigido = valor_carta_ajustado_para_embutido * (1 + taxa_total / 100)
         parcela_sem_contemplacao_embutido = total_corrigido / prazo
 
-        valor_total_lance = valor_corrigido * ((lance_proprio_com + lance_embutido) / 100)
-        saldo_apos_contemplacao = total_corrigido - valor_total_lance
+        valor_lance_proprio_com_calc = valor_carta_ajustado_para_embutido * (lance_proprio_com / 100)
+        valor_lance_embutido_com_calc = valor_carta_ajustado_para_embutido * (lance_embutido / 100)
+        valor_total_lance_calc = valor_lance_proprio_com_calc + valor_lance_embutido_com_calc
+
+        saldo_apos_contemplacao = total_corrigido - valor_total_lance_calc
         parcela_contemplacao_total = saldo_apos_contemplacao / prazo
 
-        taxa_mensal = taxa_total / prazo
-        taxa_anual = taxa_mensal * 12
+        taxa_mensal_total = taxa_total / prazo
+        taxa_anual_total = taxa_mensal_total * 12
 
-        diferenca_parcela_pos_contemplacao = parcela_padrao - parcela_contemplacao_total
+        # Diferença de parcela pós-contemplação ajustada
+        diferenca_parcela_pos_contemplacao = parcela_contemplacao_total - parcela_padrao
 
         resultado = f"""
 Simulação de Consórcio - {tipo.upper()}
@@ -107,17 +151,20 @@ Valor do lance: {format_reais(valor_lance_proprio_sem)}
 Prazo: {prazo} meses
 
 [2] COM LANCE EMBUTIDO
-Valor da carta atualizada: {format_reais(valor_corrigido)}
+Valor Líquido de Crédito Desejado: {format_reais(valor_carta_float)}
+Valor da carta AJUSTADA para Lance Embutido: {format_reais(valor_carta_ajustado_para_embutido)}
 Parcela mensal (sem contemplação): {format_reais(parcela_sem_contemplacao_embutido)}
 Parcela com contemplação ({lance_proprio_com + lance_embutido}%): {format_reais(parcela_contemplacao_total)}
-Valor do lance: {format_reais(valor_total_lance_com)}
+Lance Próprio: {format_reais(valor_lance_proprio_com_calc)}
+Lance Embutido: {format_reais(valor_lance_embutido_com_calc)}
+Valor TOTAL do lance: {format_reais(valor_total_lance_calc)}
 Prazo: {prazo} meses
 
 [3] ANÁLISE DE CUSTO
 Total de taxas: {taxa_total:.2f}%
-Taxa equivalente mensal: {taxa_mensal:.2f}%
-Taxa equivalente anual: {taxa_anual:.2f}%
-Diferença parcela pós-contemplação (Sem Lance - Com Lance Embutido): {format_reais(diferenca_parcela_pos_contemplacao)}
+Taxa equivalente mensal: {taxa_mensal_total:.2f}%
+Taxa equivalente anual: {taxa_anual_total:.2f}%
+Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance): {format_reais(diferenca_parcela_pos_contemplacao)}
         """
 
         buffer = io.BytesIO()
