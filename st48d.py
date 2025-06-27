@@ -39,6 +39,9 @@ with col_form:
     with col2:
         fundo_reserva = st.number_input("Fundo de Reserva (%)", min_value=0, step=1, value=3)
         taxa_admin = st.number_input("Taxa de Administração (%)", min_value=0, step=1, value=15)
+        # NOVO CAMPO: Taxa de Juros Anual para aplicação
+        taxa_juros_anual = st.number_input("Taxa de Juros Anual da Aplicação (%)", min_value=0.0, step=0.1, value=6.0, format="%.1f")
+
 
     calcular = st.button("Calcular", use_container_width=True)
 
@@ -140,6 +143,18 @@ if calcular and not erro_embutido:
         # Diferença de parcela pós-contemplação ajustada
         diferenca_parcela_pos_contemplacao = parcela_contemplacao_total - parcela_padrao
 
+        # --- NOVOS CÁLCULOS PARA VANTAGEM FINANCEIRA DA APLICAÇÃO (SOMENTE SEM LANCE EMBUTIDO) ---
+        taxa_juros_mensal = (1 + taxa_juros_anual / 100)**(1/12) - 1
+
+        # Cenário Sem Lance Embutido
+        saldo_para_aplicar_sem_lance = valor_carta_float - valor_lance_padrao
+        rendimento_aplicacao_sem_lance = saldo_para_aplicar_sem_lance * ((1 + taxa_juros_mensal)**prazo)
+        ganho_aplicacao_sem_lance = rendimento_aplicacao_sem_lance - saldo_para_aplicar_sem_lance
+        encargos_consorcio_sem_lance = valor_carta_float * (taxa_total / 100)
+        vantagem_liquida_sem_lance = ganho_aplicacao_sem_lance - encargos_consorcio_sem_lance
+        # --- FIM DOS NOVOS CÁLCULOS ---
+
+
         resultado = f"""
 Simulação de Consórcio - {tipo.upper()}
 
@@ -147,7 +162,7 @@ Simulação de Consórcio - {tipo.upper()}
 Valor da carta: {format_reais(valor_carta_float)}
 Parcela mensal (sem contemplação): {format_reais(parcela_sem_lance)}
 Parcela com contemplação ({lance_proprio_sem}%): {format_reais(parcela_padrao)}
-Valor do lance: {format_reais(valor_lance_proprio_sem)}
+Valor do lance: {format_reais(valor_lance_padrao)}
 Prazo: {prazo} meses
 
 [2] COM LANCE EMBUTIDO
@@ -165,6 +180,12 @@ Total de taxas: {taxa_total:.2f}%
 Taxa equivalente mensal: {taxa_mensal_total:.2f}%
 Taxa equivalente anual: {taxa_anual_total:.2f}%
 Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance): {format_reais(diferenca_parcela_pos_contemplacao)}
+
+[4] ANÁLISE DE VANTAGEM FINANCEIRA COM APLICAÇÃO (Taxa de Juros Anual: {taxa_juros_anual:.2f}%)
+    Cenário Sem Lance Embutido:
+        Valor para aplicar: {format_reais(saldo_para_aplicar_sem_lance)}
+        Rendimento da aplicação: {format_reais(ganho_aplicacao_sem_lance)}
+        Vantagem líquida: {format_reais(vantagem_liquida_sem_lance)}
         """
 
         buffer = io.BytesIO()
@@ -195,6 +216,6 @@ Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance)
 
         st.download_button("📥 Download PDF", buffer, file_name="simulacao_consorcio.pdf", mime="application/pdf")
         st.markdown("### 🧾 Resultado da Simulação")
-        st.text_area("Resumo", resultado.strip(), height=480)
+        st.text_area("Resumo", resultado.strip(), height=800) # Aumentei a altura para acomodar o novo conteúdo
     except Exception as e:
         st.error(f"Erro no cálculo: {e}")
