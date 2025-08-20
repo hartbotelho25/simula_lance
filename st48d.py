@@ -22,33 +22,54 @@ def format_input_valor(valor_str):
         return valor_str
 
 st.set_page_config(page_title="Simulador de Consórcio", layout="wide")
+
 st.markdown("<h6 style='text-align: center; color: gray;'>Desenvolvido por Hart Botelho</h6>", unsafe_allow_html=True)
-st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Versão 002 | Última atualização em 31/07/2025</h6>", unsafe_allow_html=True)
+st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Versão 003 | Última atualização em 20/08/2025</h6>", unsafe_allow_html=True)
+
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
 st.markdown("### 📋 Informações da Simulação")
 
 col_form, col_lance = st.columns([2, 1])
 
 with col_form:
+    if 'tipo_anterior' not in st.session_state:
+        st.session_state.tipo_anterior = "Imóvel"
+        st.session_state.prazo = 200
+        
     tipo = st.selectbox("Tipo de Bem", ["Imóvel", "Veículo"])
+    
+    if tipo != st.session_state.tipo_anterior:
+        if tipo == "Imóvel":
+            st.session_state.prazo = 200
+        else:
+            st.session_state.prazo = 80
+        st.session_state.tipo_anterior = tipo
+    
     col1, col2 = st.columns(2)
     with col1:
         valor_carta_input = st.text_input("Valor do crédito desejado (R$)", value="100.000", key="valor_carta_raw")
         valor_carta_formatado = format_input_valor(valor_carta_input)
         st.session_state.valor_carta = valor_carta_formatado
 
-        prazo = st.number_input("Prazo (meses)", min_value=1, step=1, value=120)
-    with col2:
-        fundo_reserva = st.number_input("Fundo de Reserva (%)", min_value=0, step=1, value=3)
-        taxa_admin = st.number_input("Taxa de Administração (%)", min_value=0, step=1, value=15)
-        taxa_juros_anual = st.number_input("Taxa de Juros Anual da Aplicação (%)", min_value=0.0, step=0.1, value=6.0, format="%.1f")
+        prazo_maximo = 200 if tipo == "Imóvel" else 80
+        prazo = st.number_input("Prazo (meses)", min_value=1, max_value=prazo_maximo, step=1, value=st.session_state.prazo)
 
-    st.button("Calcular", use_container_width=True)
+        if prazo > prazo_maximo:
+            st.info(f"O prazo máximo para {tipo.lower()} é de {prazo_maximo} meses.")
+        
+        # --- CÓDIGO ATUALIZADO (Campo de texto livre) ---
+        observacoes = st.text_area("Observações Adicionais", height=150)
+        # --- FIM DO CÓDIGO ATUALIZADO ---
+
+    with col2:
+        fundo_reserva = st.number_input("Fundo de Reserva (%)", min_value=0.0, step=0.1, value=3.0, format="%.1f")
+        taxa_admin = st.number_input("Taxa de Administração (%)", min_value=0.0, step=0.1, value=15.0, format="%.1f")
+        taxa_juros_anual = st.number_input("Taxa de Juros Anual da Aplicação (%)", min_value=0.0, step=0.1, value=6.0, format="%.1f")
 
     st.markdown("---")
     st.markdown("### 📥 Selecionar itens para PDF")
     
-    col_pdf1, col_pdf2, col_pdf3, col_pdf4 = st.columns(4)
+    col_pdf1, col_pdf2, col_pdf3, col_pdf4, col_pdf5 = st.columns(5)
     with col_pdf1:
         incluir_sem_lance = st.checkbox("[1] Sem Lance Embutido", value=True, key="incluir_sem_lance")
     with col_pdf2:
@@ -57,8 +78,9 @@ with col_form:
         incluir_analise_custo = st.checkbox("[3] Análise de Custo", value=True, key="incluir_analise_custo")
     with col_pdf4:
         incluir_analise_vantagem = st.checkbox("[4] Vantagem Financeira", value=True, key="incluir_analise_vantagem")
-
-
+    with col_pdf5:
+        incluir_observacoes = st.checkbox("[5] Observações", key="incluir_observacoes")
+        
 with col_lance:
     try:
         valor_carta_float_preview = float(st.session_state.valor_carta.replace(".", "").replace(",", "."))
@@ -186,10 +208,17 @@ Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance)
     Cenário Sem Lance Embutido:
         Valor para aplicar: {format_reais(saldo_para_aplicar_sem_lance)} (Montante: {format_reais(saldo_para_aplicar_sem_lance + ganho_aplicacao_sem_lance)})
         Rendimento da aplicação: {format_reais(ganho_aplicacao_sem_lance)}
+        Custo do Consórcio: {format_reais(encargos_consorcio_sem_lance)}
         Vantagem líquida: {format_reais(vantagem_liquida_sem_lance)}
 
 Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao invés de usar o valor total à vista, o cliente utiliza parte do recurso para dar o lance, e o restante é aplicado em um investimento de renda fixa. A análise compara o rendimento dessa aplicação com os encargos do consórcio, demonstrando a vantagem financeira líquida da operação.
 """
+        
+        # --- CÓDIGO ATUALIZADO (Bloco de Observações) ---
+        bloco_observacoes_pdf = f"""
+{observacoes}
+"""
+        # --- FIM DO CÓDIGO ATUALIZADO ---
 
         # Constrói o resultado para a área de texto do Streamlit (mantendo a numeração)
         if incluir_sem_lance:
@@ -212,6 +241,13 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
 [4] ANÁLISE DE VANTAGEM FINANCEIRA COM APLICAÇÃO (Taxa de Juros Anual: {taxa_juros_anual:.2f}%) - Prazo: {prazo} meses
 {bloco_analise_vantagem_pdf.strip()}
 """
+        # --- CÓDIGO ATUALIZADO (Adicionando observações ao resumo) ---
+        if incluir_observacoes and observacoes.strip():
+            resultado += f"""
+[5] OBSERVAÇÕES ADICIONAIS
+{bloco_observacoes_pdf.strip()}
+"""
+        # --- FIM DO CÓDIGO ATUALIZADO ---
         
         # --- FIM DA CONSTRUÇÃO DO RESULTADO ---
         
@@ -265,6 +301,14 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
             Story.append(Paragraph(bloco_obs, styles['SmallText']))
             Story.append(Spacer(1, 12))
             
+        # --- CÓDIGO ATUALIZADO (Adicionando observações ao PDF) ---
+        if incluir_observacoes and observacoes.strip():
+            Story.append(Paragraph("OBSERVAÇÕES ADICIONAIS", styles['CustomHeading']))
+            for line in bloco_observacoes_pdf.strip().split('\n'):
+                Story.append(Paragraph(line, styles['NormalText']))
+            Story.append(Spacer(1, 12))
+        # --- FIM DO CÓDIGO ATUALIZADO ---
+
         doc.build(Story)
         buffer.seek(0)
         
