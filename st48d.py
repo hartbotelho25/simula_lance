@@ -22,10 +22,8 @@ def format_input_valor(valor_str):
         return valor_str
 
 st.set_page_config(page_title="Simulador de Consórcio", layout="wide")
-
 st.markdown("<h6 style='text-align: center; color: gray;'>Desenvolvido por Hart Botelho</h6>", unsafe_allow_html=True)
-st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Versão 003 | Última atualização em 20/08/2025</h6>", unsafe_allow_html=True)
-
+st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Versão 004 | Última atualização em 28/08/2025</h6>", unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
 st.markdown("### 📋 Informações da Simulação")
 
@@ -51,15 +49,13 @@ with col_form:
         valor_carta_formatado = format_input_valor(valor_carta_input)
         st.session_state.valor_carta = valor_carta_formatado
 
-        prazo_maximo = 200 if tipo == "Imóvel" else 80
+        prazo_maximo = 240 if tipo == "Imóvel" else 80
         prazo = st.number_input("Prazo (meses)", min_value=1, max_value=prazo_maximo, step=1, value=st.session_state.prazo)
 
         if prazo > prazo_maximo:
             st.info(f"O prazo máximo para {tipo.lower()} é de {prazo_maximo} meses.")
         
-        # --- CÓDIGO ATUALIZADO (Campo de texto livre) ---
         observacoes = st.text_area("Observações Adicionais", height=150)
-        # --- FIM DO CÓDIGO ATUALIZADO ---
 
     with col2:
         fundo_reserva = st.number_input("Fundo de Reserva (%)", min_value=0.0, step=0.1, value=3.0, format="%.1f")
@@ -86,20 +82,47 @@ with col_lance:
         valor_carta_float_preview = float(st.session_state.valor_carta.replace(".", "").replace(",", "."))
     except:
         valor_carta_float_preview = 0.0
-
+    
     st.markdown("### 🎯 Sem Lance Embutido")
     col_sem1, col_sem2 = st.columns([1, 1])
     with col_sem1:
         lance_proprio_sem = st.number_input("Lance Próprio (%)", min_value=0, max_value=100, step=1, value=10, key="sem_lance")
+        st.session_state.lance_proprio_sem = lance_proprio_sem
     with col_sem2:
         valor_lance_proprio_sem = valor_carta_float_preview * (lance_proprio_sem / 100)
         st.markdown(f"**{format_reais(valor_lance_proprio_sem)}**")
 
     st.markdown("---")
-    st.markdown("### 🎯 Com Lance Embutido")
+    
+    # Nova lógica de layout para o título e o botão de trava
+    col_titulo_com_lance, col_trava_lance = st.columns([2, 1])
+    with col_titulo_com_lance:
+        st.markdown("### 🎯 Com Lance Embutido")
+    with col_trava_lance:
+        replicar_lance = st.checkbox("Usar mesmo valor de Lance Próprio (R$)", value=False, key="replicar_lance")
+
     col_com1, col_com2 = st.columns([1, 1])
+
     with col_com1:
-        lance_proprio_com = st.number_input("Lance Próprio (%)", min_value=0, max_value=100, step=1, value=10, key="com_lance_proprio")
+        if replicar_lance:
+            # Novo cálculo para replicar o valor em reais
+            if (1 - (st.session_state.com_lance_embutido / 100)) > 0:
+                valor_carta_ajustado_com_embutido = valor_carta_float_preview / (1 - (st.session_state.com_lance_embutido / 100))
+            else:
+                valor_carta_ajustado_com_embutido = valor_carta_float_preview
+            
+            valor_em_reais_do_sem_lance = valor_carta_float_preview * (st.session_state.lance_proprio_sem / 100)
+            
+            # Calcula a porcentagem equivalente para o novo valor da carta
+            if valor_carta_ajustado_com_embutido > 0:
+                percentual_ajustado = (valor_em_reais_do_sem_lance / valor_carta_ajustado_com_embutido) * 100
+            else:
+                percentual_ajustado = 0
+            
+            lance_proprio_com = st.number_input("Lance Próprio (%)", min_value=0.0, max_value=100.0, step=0.1, value=percentual_ajustado, disabled=True, format="%.2f", key="com_lance_proprio")
+        else:
+            lance_proprio_com = st.number_input("Lance Próprio (%)", min_value=0, max_value=100, step=1, value=10, key="com_lance_proprio")
+
     with col_com2:
         lance_embutido = st.number_input("Lance Embutido (%)", min_value=0, max_value=100, step=1, value=20, key="com_lance_embutido")
 
@@ -172,6 +195,13 @@ if not erro_embutido:
         ganho_aplicacao_sem_lance = rendimento_aplicacao_sem_lance - saldo_para_aplicar_sem_lance
         encargos_consorcio_sem_lance = valor_carta_float * (taxa_total / 100)
         vantagem_liquida_sem_lance = ganho_aplicacao_sem_lance - encargos_consorcio_sem_lance
+        
+        # Recálculo: custo adicional em taxas
+        custo_adicional_total_taxas = (valor_carta_ajustado_para_embutido * (taxa_total / 100)) - (valor_carta_float * (taxa_total / 100))
+        custo_adicional_mensal_taxas = custo_adicional_total_taxas / prazo
+
+        # Cálculo para o novo descritivo
+        percentual_embutido_sobre_credito = (valor_lance_embutido_com_calc / valor_carta_float) * 100
         # --- FIM DOS CÁLCULOS ---
 
 
@@ -182,6 +212,7 @@ if not erro_embutido:
         pdf_titulo = f"Simulação de Consórcio - {tipo.upper()}"
         
         bloco_sem_lance_pdf = f"""
+Cenário: Sem Lance Embutido
 Valor do crédito: {format_reais(valor_carta_float)}
 Parcela mensal (sem contemplação): {format_reais(parcela_sem_lance)}
 Parcela com contemplação ({lance_proprio_sem}%): {format_reais(parcela_padrao)}
@@ -189,23 +220,26 @@ Valor do lance: {format_reais(valor_lance_padrao)}
 Prazo: {prazo} meses
 """
         bloco_com_lance_pdf = f"""
+Cenário: Com Lance Embutido
 Valor do crédito: {format_reais(valor_carta_float)}
 Valor da carta AJUSTADA para Lance Embutido: {format_reais(valor_carta_ajustado_para_embutido)}
 Parcela mensal (sem contemplação): {format_reais(parcela_sem_contemplacao_embutido)}
-Parcela com contemplação ({lance_proprio_com + lance_embutido}%): {format_reais(parcela_contemplacao_total)}
-Lance Próprio: {format_reais(valor_lance_proprio_com_calc)}
-Lance Embutido: {format_reais(valor_lance_embutido_com_calc)}
+Parcela com contemplação ({int(lance_proprio_com) + int(lance_embutido)}%): {format_reais(parcela_contemplacao_total)}
+Lance Próprio ({int(lance_proprio_com)}%): {format_reais(valor_lance_proprio_com_calc)}
+Lance Embutido ({int(lance_embutido)}%): {format_reais(valor_lance_embutido_com_calc)}
 Valor TOTAL do lance: {format_reais(valor_total_lance_calc)}
 Prazo: {prazo} meses
 """
+        # Linha ajustada para o novo descritivo
         bloco_analise_custo_pdf = f"""
 Total de taxas: {taxa_total:.2f}%
 Taxa equivalente mensal: {taxa_mensal_total:.2f}%
 Taxa equivalente anual: {taxa_anual_total:.2f}%
 Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance): {format_reais(diferenca_parcela_pos_contemplacao)}
 """
+
         bloco_analise_vantagem_pdf = f"""
-    Cenário Sem Lance Embutido:
+    **Cenário Sem Lance Embutido:**
         Valor para aplicar: {format_reais(saldo_para_aplicar_sem_lance)} (Montante: {format_reais(saldo_para_aplicar_sem_lance + ganho_aplicacao_sem_lance)})
         Rendimento da aplicação: {format_reais(ganho_aplicacao_sem_lance)}
         Custo do Consórcio: {format_reais(encargos_consorcio_sem_lance)}
@@ -214,11 +248,9 @@ Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance)
 Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao invés de usar o valor total à vista, o cliente utiliza parte do recurso para dar o lance, e o restante é aplicado em um investimento de renda fixa. A análise compara o rendimento dessa aplicação com os encargos do consórcio, demonstrando a vantagem financeira líquida da operação.
 """
         
-        # --- CÓDIGO ATUALIZADO (Bloco de Observações) ---
         bloco_observacoes_pdf = f"""
 {observacoes}
 """
-        # --- FIM DO CÓDIGO ATUALIZADO ---
 
         # Constrói o resultado para a área de texto do Streamlit (mantendo a numeração)
         if incluir_sem_lance:
@@ -241,13 +273,11 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
 [4] ANÁLISE DE VANTAGEM FINANCEIRA COM APLICAÇÃO (Taxa de Juros Anual: {taxa_juros_anual:.2f}%) - Prazo: {prazo} meses
 {bloco_analise_vantagem_pdf.strip()}
 """
-        # --- CÓDIGO ATUALIZADO (Adicionando observações ao resumo) ---
         if incluir_observacoes and observacoes.strip():
             resultado += f"""
 [5] OBSERVAÇÕES ADICIONAIS
 {bloco_observacoes_pdf.strip()}
 """
-        # --- FIM DO CÓDIGO ATUALIZADO ---
         
         # --- FIM DA CONSTRUÇÃO DO RESULTADO ---
         
@@ -273,13 +303,23 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
         if incluir_sem_lance:
             Story.append(Paragraph("SEM LANCE EMBUTIDO", styles['CustomHeading']))
             for line in bloco_sem_lance_pdf.strip().split('\n'):
-                Story.append(Paragraph(line, styles['NormalText']))
+                # Usando um regex para remover o prefixo "Cenário: "
+                clean_line = re.sub(r'^Cenário: ', '', line)
+                # Dando um destaque ao cabeçalho do cenário no PDF
+                if "Cenário:" in line:
+                    Story.append(Paragraph(clean_line, styles['CustomHeading']))
+                else:
+                    Story.append(Paragraph(clean_line, styles['NormalText']))
             Story.append(Spacer(1, 12))
 
         if incluir_com_lance:
             Story.append(Paragraph("COM LANCE EMBUTIDO", styles['CustomHeading']))
             for line in bloco_com_lance_pdf.strip().split('\n'):
-                Story.append(Paragraph(line, styles['NormalText']))
+                clean_line = re.sub(r'^Cenário: ', '', line)
+                if "Cenário:" in line:
+                    Story.append(Paragraph(clean_line, styles['CustomHeading']))
+                else:
+                    Story.append(Paragraph(clean_line, styles['NormalText']))
             Story.append(Spacer(1, 12))
         
         if incluir_analise_custo:
@@ -290,24 +330,23 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
         
         if incluir_analise_vantagem:
             Story.append(Paragraph(f"ANÁLISE DE VANTAGEM FINANCEIRA COM APLICAÇÃO (Taxa de Juros Anual: {taxa_juros_anual:.2f}%) - Prazo: {prazo} meses", styles['CustomHeading']))
-            # Tratamento especial para a observação
+            
             bloco_vantagem_sem_obs = bloco_analise_vantagem_pdf.split("Observação")[0].strip()
+            bloco_vantagem_sem_obs_limpo = bloco_vantagem_sem_obs.replace("**", "") 
             bloco_obs = "Observação" + bloco_analise_vantagem_pdf.split("Observação")[1]
             
-            for line in bloco_vantagem_sem_obs.strip().split('\n'):
+            for line in bloco_vantagem_sem_obs_limpo.strip().split('\n'):
                  Story.append(Paragraph(line, styles['NormalText']))
 
             Story.append(Spacer(1, 6))
             Story.append(Paragraph(bloco_obs, styles['SmallText']))
             Story.append(Spacer(1, 12))
             
-        # --- CÓDIGO ATUALIZADO (Adicionando observações ao PDF) ---
         if incluir_observacoes and observacoes.strip():
             Story.append(Paragraph("OBSERVAÇÕES ADICIONAIS", styles['CustomHeading']))
             for line in bloco_observacoes_pdf.strip().split('\n'):
                 Story.append(Paragraph(line, styles['NormalText']))
             Story.append(Spacer(1, 12))
-        # --- FIM DO CÓDIGO ATUALIZADO ---
 
         doc.build(Story)
         buffer.seek(0)
