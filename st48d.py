@@ -23,7 +23,7 @@ def format_input_valor(valor_str):
 
 st.set_page_config(page_title="Simulador de Consórcio", layout="wide")
 st.markdown("<h6 style='text-align: center; color: gray;'>Desenvolvido por Hart Botelho</h6>", unsafe_allow_html=True)
-st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Versão 004 | Última atualização em 28/08/2025</h6>", unsafe_allow_html=True)
+st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Versão 005 | Última atualização em 05/09/2025</h6>", unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
 st.markdown("### 📋 Informações da Simulação")
 
@@ -61,21 +61,24 @@ with col_form:
         fundo_reserva = st.number_input("Fundo de Reserva (%)", min_value=0.0, step=0.1, value=3.0, format="%.1f")
         taxa_admin = st.number_input("Taxa de Administração (%)", min_value=0.0, step=0.1, value=15.0, format="%.1f")
         taxa_juros_anual = st.number_input("Taxa de Juros Anual da Aplicação (%)", min_value=0.0, step=0.1, value=6.0, format="%.1f")
+        meses_contemplacao = st.number_input("Meses para contemplação - Análise de custo", min_value=2, max_value=prazo, step=1, value=12)
 
     st.markdown("---")
     st.markdown("### 📥 Selecionar itens para PDF")
     
-    col_pdf1, col_pdf2, col_pdf3, col_pdf4, col_pdf5 = st.columns(5)
+    col_pdf1, col_pdf2, col_pdf3, col_pdf4, col_pdf5, col_pdf6 = st.columns(6)
     with col_pdf1:
         incluir_sem_lance = st.checkbox("[1] Sem Lance Embutido", value=True, key="incluir_sem_lance")
     with col_pdf2:
         incluir_com_lance = st.checkbox("[2] Com Lance Embutido", value=True, key="incluir_com_lance")
     with col_pdf3:
-        incluir_analise_custo = st.checkbox("[3] Análise de Custo", value=True, key="incluir_analise_custo")
+        incluir_comparativo_financiamento = st.checkbox("[3] Financiamento", key="incluir_comparativo")
     with col_pdf4:
         incluir_analise_vantagem = st.checkbox("[4] Vantagem Financeira", value=True, key="incluir_analise_vantagem")
     with col_pdf5:
         incluir_observacoes = st.checkbox("[5] Observações", key="incluir_observacoes")
+    with col_pdf6:
+        incluir_analise_custo = st.checkbox("[6] Análise de Custo", value=True, key="incluir_analise_custo")
         
 with col_lance:
     try:
@@ -94,7 +97,6 @@ with col_lance:
 
     st.markdown("---")
     
-    # Nova lógica de layout para o título e o botão de trava
     col_titulo_com_lance, col_trava_lance = st.columns([2, 1])
     with col_titulo_com_lance:
         st.markdown("### 🎯 Com Lance Embutido")
@@ -105,7 +107,6 @@ with col_lance:
 
     with col_com1:
         if replicar_lance:
-            # Novo cálculo para replicar o valor em reais
             if (1 - (st.session_state.com_lance_embutido / 100)) > 0:
                 valor_carta_ajustado_com_embutido = valor_carta_float_preview / (1 - (st.session_state.com_lance_embutido / 100))
             else:
@@ -113,7 +114,6 @@ with col_lance:
             
             valor_em_reais_do_sem_lance = valor_carta_float_preview * (st.session_state.lance_proprio_sem / 100)
             
-            # Calcula a porcentagem equivalente para o novo valor da carta
             if valor_carta_ajustado_com_embutido > 0:
                 percentual_ajustado = (valor_em_reais_do_sem_lance / valor_carta_ajustado_com_embutido) * 100
             else:
@@ -147,7 +147,20 @@ with col_lance:
     st.markdown(f"💰 **Total do Lance com Embutido: {int(total_lance_pct)}% — {format_reais(valor_total_lance_com)}**")
 
     st.markdown(f"### <p style='text-align: center; color: #2c3e50;'>Base de Cálculo (Carta Ajustada): {format_reais(valor_carta_ajustado_com_embutido_preview)}</p>", unsafe_allow_html=True)
-    st.caption(f"✨ Valor do crédito desejado: {format_reais(valor_carta_float_preview)}")
+    
+    st.markdown("### 🏦 Simulação de Financiamento")
+    st.markdown(f"**Valor do Financiamento:** {format_reais(valor_carta_float_preview)}")
+
+    col_finan1, col_finan2 = st.columns(2)
+    with col_finan1:
+        prazo_financiamento = st.number_input("Prazo (meses)", min_value=1, step=1, value=prazo, key="prazo_finan")
+        entrada_financiamento_pct = st.number_input("Entrada (%)", min_value=0, max_value=100, step=1, value=20, key="entrada_financiamento_pct")
+    
+    with col_finan2:
+        taxa_juros_financiamento = st.number_input("Taxa de Juros (% a.a.)", min_value=0.0, step=0.1, value=9.5, format="%.1f", key="taxa_financiamento")
+        valor_entrada_financiamento = valor_carta_float_preview * (entrada_financiamento_pct / 100)
+        st.markdown("Valor da Entrada (R$)")
+        st.markdown(f"**{format_reais(valor_entrada_financiamento)}**")
 
 
 limite_embutido = 0.50 if tipo == "Imóvel" else 0.30
@@ -159,6 +172,9 @@ elif lance_embutido == 100:
     st.error("🚫 O lance embutido não pode ser 100%, pois não haveria valor de carta para ajuste.")
     erro_embutido = True
 
+if meses_contemplacao > prazo:
+    st.error(f"🚫 O número de meses para contemplação ({meses_contemplacao}) não pode ser maior que o prazo total do consórcio ({prazo}). Por favor, ajuste o valor.")
+    erro_embutido = True
 
 if not erro_embutido:
     try:
@@ -171,6 +187,12 @@ if not erro_embutido:
         valor_lance_padrao = valor_carta_float * (lance_proprio_sem / 100)
         saldo_apos_padrao = total_sem_lance - valor_lance_padrao
         parcela_padrao = saldo_apos_padrao / prazo
+        
+        # Novo cálculo do custo total pago - SEM LANCE
+        custo_sem_lance_cheio = parcela_sem_lance * meses_contemplacao
+        custo_sem_lance_amortizado = parcela_padrao * (prazo - meses_contemplacao)
+        custo_total_sem_lance = custo_sem_lance_cheio + custo_sem_lance_amortizado + valor_lance_padrao
+
 
         if (1 - (lance_embutido / 100)) > 0:
             valor_carta_ajustado_para_embutido = valor_carta_float / (1 - (lance_embutido / 100))
@@ -184,6 +206,12 @@ if not erro_embutido:
         valor_total_lance_calc = valor_lance_proprio_com_calc + valor_lance_embutido_com_calc
         saldo_apos_contemplacao = total_corrigido - valor_total_lance_calc
         parcela_contemplacao_total = saldo_apos_contemplacao / prazo
+
+        # Novo cálculo do custo total pago - COM LANCE EMBUTIDO
+        custo_com_lance_cheio = parcela_sem_contemplacao_embutido * meses_contemplacao
+        custo_com_lance_amortizado = parcela_contemplacao_total * (prazo - meses_contemplacao)
+        custo_total_com_lance = custo_com_lance_cheio + custo_com_lance_amortizado + valor_lance_proprio_com_calc
+
 
         taxa_mensal_total = taxa_total / prazo
         taxa_anual_total = taxa_mensal_total * 12
@@ -202,6 +230,21 @@ if not erro_embutido:
 
         # Cálculo para o novo descritivo
         percentual_embutido_sobre_credito = (valor_lance_embutido_com_calc / valor_carta_float) * 100
+
+        # NOVOS CÁLCULOS DE FINANCIAMENTO
+        valor_principal_financiamento = valor_carta_float - (valor_carta_float * entrada_financiamento_pct / 100)
+        taxa_mensal_financiamento = (taxa_juros_financiamento / 100) / 12
+        if taxa_mensal_financiamento > 0:
+            parcela_financiamento = valor_principal_financiamento * taxa_mensal_financiamento / (1 - (1 + taxa_mensal_financiamento)**-prazo_financiamento)
+        else:
+            parcela_financiamento = valor_principal_financiamento / prazo_financiamento
+        
+        custo_total_financiamento = (parcela_financiamento * prazo_financiamento) + (valor_carta_float * entrada_financiamento_pct / 100)
+        custo_total_consorcio_sem_lance = (parcela_padrao * prazo) + (valor_carta_float * lance_proprio_sem / 100)
+        
+        diferenca_custo_total = custo_total_financiamento - custo_total_consorcio_sem_lance
+        diferenca_parcela_comparativo = parcela_financiamento - parcela_padrao
+
         # --- FIM DOS CÁLCULOS ---
 
 
@@ -230,8 +273,17 @@ Lance Embutido ({int(lance_embutido)}%): {format_reais(valor_lance_embutido_com_
 Valor TOTAL do lance: {format_reais(valor_total_lance_calc)}
 Prazo: {prazo} meses
 """
-        # Linha ajustada para o novo descritivo
+        # Adiciona a nova tabela de custo total
         bloco_analise_custo_pdf = f"""
+**Comparativo de Custo Total (Estimativa em {meses_contemplacao} meses para contemplação)**
+| Cenário | Custo Total Pago |
+|:---|:---:|
+| Sem Lance Embutido | {format_reais(custo_total_sem_lance)} |
+| Com Lance Embutido | {format_reais(custo_total_com_lance)} |
+| Financiamento | {format_reais(custo_total_financiamento)} |
+"""
+        # Linha ajustada para o novo descritivo
+        bloco_analise_custo_extra_pdf = f"""
 Total de taxas: {taxa_total:.2f}%
 Taxa equivalente mensal: {taxa_mensal_total:.2f}%
 Taxa equivalente anual: {taxa_anual_total:.2f}%
@@ -246,6 +298,16 @@ Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance)
         Vantagem líquida: {format_reais(vantagem_liquida_sem_lance)}
 
 Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao invés de usar o valor total à vista, o cliente utiliza parte do recurso para dar o lance, e o restante é aplicado em um investimento de renda fixa. A análise compara o rendimento dessa aplicação com os encargos do consórcio, demonstrando a vantagem financeira líquida da operação.
+"""
+        # Reorganiza a ordem das informações no bloco de financiamento
+        bloco_comparativo_financiamento_pdf = f"""
+**Simulação de Financiamento**
+    - Valor do Financiamento: {format_reais(valor_carta_float)}
+    - Entrada ({entrada_financiamento_pct}%): {format_reais(valor_entrada_financiamento)}
+    - Parcela Mensal: {format_reais(parcela_financiamento)}
+    - Prazo: {prazo_financiamento} meses
+    - Taxa de Juros Anual: {taxa_juros_financiamento:.2f}%
+    - Total Pago: {format_reais(custo_total_financiamento)}
 """
         
         bloco_observacoes_pdf = f"""
@@ -263,10 +325,11 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
 [2] COM LANCE EMBUTIDO
 {bloco_com_lance_pdf.strip()}
 """
-        if incluir_analise_custo:
+        # Ordem invertida para Financiamento e Análise de Custo
+        if incluir_comparativo_financiamento:
             resultado += f"""
-[3] ANÁLISE DE CUSTO
-{bloco_analise_custo_pdf.strip()}
+[3] FINANCIAMENTO
+{bloco_comparativo_financiamento_pdf.strip()}
 """
         if incluir_analise_vantagem:
             resultado += f"""
@@ -277,6 +340,12 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
             resultado += f"""
 [5] OBSERVAÇÕES ADICIONAIS
 {bloco_observacoes_pdf.strip()}
+"""
+        if incluir_analise_custo:
+            resultado += f"""
+[6] ANÁLISE DE CUSTO
+{bloco_analise_custo_pdf.strip()}
+{bloco_analise_custo_extra_pdf.strip()}
 """
         
         # --- FIM DA CONSTRUÇÃO DO RESULTADO ---
@@ -303,9 +372,7 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
         if incluir_sem_lance:
             Story.append(Paragraph("SEM LANCE EMBUTIDO", styles['CustomHeading']))
             for line in bloco_sem_lance_pdf.strip().split('\n'):
-                # Usando um regex para remover o prefixo "Cenário: "
                 clean_line = re.sub(r'^Cenário: ', '', line)
-                # Dando um destaque ao cabeçalho do cenário no PDF
                 if "Cenário:" in line:
                     Story.append(Paragraph(clean_line, styles['CustomHeading']))
                 else:
@@ -322,12 +389,16 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
                     Story.append(Paragraph(clean_line, styles['NormalText']))
             Story.append(Spacer(1, 12))
         
-        if incluir_analise_custo:
-            Story.append(Paragraph("ANÁLISE DE CUSTO", styles['CustomHeading']))
-            for line in bloco_analise_custo_pdf.strip().split('\n'):
-                Story.append(Paragraph(line, styles['NormalText']))
+        if incluir_comparativo_financiamento:
+            Story.append(Paragraph("FINANCIAMENTO", styles['CustomHeading']))
+            comparativo_lines = bloco_comparativo_financiamento_pdf.strip().split('\n')
+            for line in comparativo_lines:
+                if "|" in line:
+                    Story.append(Paragraph(line.replace("|", " | "), styles['NormalText']))
+                else:
+                    Story.append(Paragraph(line, styles['NormalText']))
             Story.append(Spacer(1, 12))
-        
+
         if incluir_analise_vantagem:
             Story.append(Paragraph(f"ANÁLISE DE VANTAGEM FINANCEIRA COM APLICAÇÃO (Taxa de Juros Anual: {taxa_juros_anual:.2f}%) - Prazo: {prazo} meses", styles['CustomHeading']))
             
@@ -341,10 +412,24 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
             Story.append(Spacer(1, 6))
             Story.append(Paragraph(bloco_obs, styles['SmallText']))
             Story.append(Spacer(1, 12))
-            
+
         if incluir_observacoes and observacoes.strip():
             Story.append(Paragraph("OBSERVAÇÕES ADICIONAIS", styles['CustomHeading']))
             for line in bloco_observacoes_pdf.strip().split('\n'):
+                Story.append(Paragraph(line, styles['NormalText']))
+            Story.append(Spacer(1, 12))
+
+        if incluir_analise_custo:
+            Story.append(Paragraph("ANÁLISE DE CUSTO", styles['CustomHeading']))
+            
+            # Adiciona a tabela de custo total
+            table_lines = bloco_analise_custo_pdf.strip().split('\n')
+            for line in table_lines:
+                Story.append(Paragraph(line.replace("|", " | "), styles['NormalText']))
+            
+            Story.append(Spacer(1, 12))
+
+            for line in bloco_analise_custo_extra_pdf.strip().split('\n'):
                 Story.append(Paragraph(line, styles['NormalText']))
             Story.append(Spacer(1, 12))
 
