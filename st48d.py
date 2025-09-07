@@ -23,7 +23,7 @@ def format_input_valor(valor_str):
 
 st.set_page_config(page_title="Simulador de Consórcio", layout="wide")
 st.markdown("<h6 style='text-align: center; color: gray;'>Desenvolvido por Hart Botelho</h6>", unsafe_allow_html=True)
-st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Versão 005 | Última atualização em 06/09/2025</h6>", unsafe_allow_html=True)
+st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Versão 005 | Última atualização em 07/09/2025</h6>", unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
 st.markdown("### 📋 Informações da Simulação")
 
@@ -62,12 +62,10 @@ with col_form:
         taxa_admin = st.number_input("Taxa de Administração (%)", min_value=0.0, step=0.1, value=15.0, format="%.1f")
         taxa_juros_anual = st.number_input("Taxa de Juros Anual da Aplicação (%)", min_value=0.0, step=0.1, value=6.0, format="%.1f")
         
-        # Novo campo para fator de correção INPC
         usar_inpc = st.checkbox("Habilitar Fator de Correção INPC", value=True)
         fator_inpc_pct = 0
         if usar_inpc:
             fator_inpc_pct = st.number_input("Fator de correção INPC (%) - média anual", min_value=0.0, step=0.1, value=4.5, format="%.1f")
-
 
     st.markdown("---")
     st.markdown("### 📥 Selecionar itens para PDF")
@@ -154,16 +152,13 @@ with col_lance:
 
     st.markdown(f"### <p style='text-align: center; color: #2c3e50;'>Base de Cálculo (Carta Ajustada): {format_reais(valor_carta_ajustado_com_embutido_preview)}</p>", unsafe_allow_html=True)
     
-    # NOVOS CAMPOS PARA SIMULAÇÃO DE FINANCIAMENTO
     st.markdown("---")
     st.markdown("### 🏦 Simulação de Financiamento")
     
     col_finan1, col_finan2 = st.columns(2)
     with col_finan1:
-        # Checkbox para habilitar o valor manual
         usar_valor_manual = st.checkbox("Insira outro valor", value=False, key="usar_valor_manual")
         
-        # Campo de input condicional
         if usar_valor_manual:
             valor_financiamento_base = st.number_input("Valor do Crédito para simulação (R$)", min_value=0, value=int(valor_carta_float_preview), key="valor_finan_manual")
         else:
@@ -174,12 +169,15 @@ with col_lance:
     
     with col_finan2:
         taxa_juros_financiamento = st.number_input("Taxa de Juros (% a.a.)", min_value=0.0, step=0.1, value=9.5, format="%.1f", key="taxa_financiamento")
+        
+        taxa_mensal_financiamento_info = (1 + taxa_juros_financiamento / 100)**(1/12) - 1
+        st.markdown(f"**Taxa Equivalente Mensal:** {taxa_mensal_financiamento_info * 100:.2f}%")
+        
         entrada_financiamento_pct = st.number_input("Entrada (%)", min_value=0, max_value=100, step=1, value=20, key="entrada_financiamento_pct")
         
         valor_entrada_financiamento = valor_financiamento_base * (entrada_financiamento_pct / 100)
         valor_principal_financiamento = valor_financiamento_base - valor_entrada_financiamento
         
-        # Exibição compacta dos valores
         st.markdown(f"""
         <style>
             .compact-text p {{
@@ -238,11 +236,9 @@ if not erro_embutido:
         rendimento_aplicacao_sem_lance = saldo_para_aplicar_sem_lance * ((1 + taxa_juros_mensal)**prazo)
         ganho_aplicacao_sem_lance = rendimento_aplicacao_sem_lance - saldo_para_aplicar_sem_lance
         
-        # Definir as variáveis de custo e vantagem antes do bloco condicional
         encargos_consorcio_sem_lance = total_sem_lance - valor_carta_float
         vantagem_liquida_sem_lance_original = ganho_aplicacao_sem_lance - encargos_consorcio_sem_lance
         
-        # Inicializar variáveis para o bloco condicional
         total_sem_lance_corrigido_text = ""
         total_com_lance_corrigido_text = ""
         custo_consorcio_corrigido_text = ""
@@ -256,13 +252,11 @@ if not erro_embutido:
             inpc_text = " | Corrigido INPC"
             fator_anual = 1 + fator_inpc_pct / 100
             
-            # Cálculo para cenário Sem Lance Embutido
             total_sem_lance_corrigido = 0
             for i in range(1, prazo + 1):
                 ano = (i - 1) // 12
                 total_sem_lance_corrigido += parcela_sem_lance * (fator_anual ** ano)
             
-            # Cálculo para cenário Com Lance Embutido
             total_com_lance_corrigido = 0
             for i in range(1, prazo + 1):
                 ano = (i - 1) // 12
@@ -271,7 +265,6 @@ if not erro_embutido:
             encargos_consorcio_corrigido = total_sem_lance_corrigido - valor_carta_float
             vantagem_liquida_sem_lance_corrigido = ganho_aplicacao_sem_lance - encargos_consorcio_corrigido
             
-            # Cálculo de juros compostos para o percentual de acréscimo
             prazo_em_anos = prazo / 12
             total_inpc_percentual = ((1 + fator_inpc_pct / 100)**prazo_em_anos - 1) * 100
             
@@ -284,8 +277,8 @@ if not erro_embutido:
             custo_consorcio_corrigido_text = f" ({format_reais(encargos_consorcio_corrigido)}*)"
             vantagem_liquida_corrigido_text = f" ({format_reais(vantagem_liquida_sem_lance_corrigido)}*)"
 
-        # Novos cálculos de financiamento
-        taxa_mensal_financiamento = (taxa_juros_financiamento / 100) / 12
+        valor_principal_financiamento = valor_financiamento_base - valor_entrada_financiamento
+        taxa_mensal_financiamento = (1 + taxa_juros_financiamento / 100)**(1/12) - 1
         if taxa_mensal_financiamento > 0:
             parcela_financiamento = valor_principal_financiamento * taxa_mensal_financiamento / (1 - (1 + taxa_mensal_financiamento)**-prazo_financiamento)
         else:
@@ -296,7 +289,6 @@ if not erro_embutido:
         diferenca_custo_total = custo_total_financiamento - total_sem_lance
         diferenca_parcela_comparativo = parcela_financiamento - parcela_padrao
         
-        # Novos cálculos de custo efetivo do consórcio
         custo_efetivo_com_lance = valor_carta_float + (total_corrigido - valor_carta_ajustado_para_embutido)
 
         # --- FIM DOS CÁLCULOS ---
@@ -326,6 +318,7 @@ Lance Embutido ({int(lance_embutido)}%): {format_reais(valor_lance_embutido_com_
 Valor TOTAL do lance: {format_reais(valor_total_lance_calc)}
 Prazo: {prazo} meses
 """
+            
         bloco_analise_vantagem_pdf = f"""
     **Cenário Sem Lance Embutido:**
         Valor para aplicar: {format_reais(saldo_para_aplicar_sem_lance)} (Montante: {format_reais(saldo_para_aplicar_sem_lance + ganho_aplicacao_sem_lance)})
@@ -345,7 +338,6 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
 | Financiamento | {format_reais(custo_total_financiamento)} |
 """
         
-        # Adiciona a informação do INPC apenas se o checkbox estiver ativo
         if usar_inpc:
              bloco_analise_custo_pdf += f"""
 Percentual de acréscimo INPC durante o período: {total_inpc_percentual:.2f}%
@@ -353,8 +345,9 @@ Percentual de acréscimo INPC durante o período: {total_inpc_percentual:.2f}%
 
         bloco_analise_custo_extra_pdf = f"""
 Total de taxas: {taxa_total:.2f}%
-Taxa equivalente mensal: {taxa_mensal_total:.2f}%
-Taxa equivalente anual: {taxa_anual_total:.2f}%
+Taxa equivalente mensal do Consórcio: {taxa_mensal_total:.2f}%
+Taxa equivalente mensal do Financiamento: {taxa_mensal_financiamento * 100:.2f}%
+Taxa equivalente anual do Consórcio: {taxa_anual_total:.2f}%
 Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance): {format_reais(diferenca_parcela_pos_contemplacao)}
 """
         
@@ -364,8 +357,8 @@ Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance)
     - Entrada ({entrada_financiamento_pct}%): {format_reais(valor_entrada_financiamento)}
     - Valor Financiado: {format_reais(valor_principal_financiamento)}
     - Parcela Mensal: {format_reais(parcela_financiamento)}
+    - Taxa de Juros Anual: {taxa_juros_financiamento:.2f}% | Mensal: {taxa_mensal_financiamento * 100:.2f}%
     - Prazo: {prazo_financiamento} meses
-    - Taxa de Juros Anual: {taxa_juros_financiamento:.2f}%
     - Total Pago: {format_reais(custo_total_financiamento)}
 """
         
