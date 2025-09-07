@@ -61,6 +61,12 @@ with col_form:
         fundo_reserva = st.number_input("Fundo de Reserva (%)", min_value=0.0, step=0.1, value=3.0, format="%.1f")
         taxa_admin = st.number_input("Taxa de Administração (%)", min_value=0.0, step=0.1, value=15.0, format="%.1f")
         taxa_juros_anual = st.number_input("Taxa de Juros Anual da Aplicação (%)", min_value=0.0, step=0.1, value=6.0, format="%.1f")
+        
+        # Novo campo para fator de correção INPC
+        usar_inpc = st.checkbox("Habilitar Fator de Correção INPC", value=True)
+        fator_inpc_pct = 0
+        if usar_inpc:
+            fator_inpc_pct = st.number_input("Fator de correção INPC (%) - média anual", min_value=0.0, step=0.1, value=4.5, format="%.1f")
 
 
     st.markdown("---")
@@ -155,7 +161,7 @@ with col_lance:
     col_finan1, col_finan2 = st.columns(2)
     with col_finan1:
         # Checkbox para habilitar o valor manual
-        usar_valor_manual = st.checkbox("Usar valor de crédito manual", value=False, key="usar_valor_manual")
+        usar_valor_manual = st.checkbox("Insira outro valor", value=False, key="usar_valor_manual")
         
         # Campo de input condicional
         if usar_valor_manual:
@@ -171,11 +177,22 @@ with col_lance:
         entrada_financiamento_pct = st.number_input("Entrada (%)", min_value=0, max_value=100, step=1, value=20, key="entrada_financiamento_pct")
         
         valor_entrada_financiamento = valor_financiamento_base * (entrada_financiamento_pct / 100)
-        st.markdown("Valor da Entrada (R$)")
-        st.markdown(f"**{format_reais(valor_entrada_financiamento)}**")
-        
         valor_principal_financiamento = valor_financiamento_base - valor_entrada_financiamento
-        st.markdown(f"✨ **Valor Financiado:** {format_reais(valor_principal_financiamento)}")
+        
+        # Exibição compacta dos valores
+        st.markdown(f"""
+        <style>
+            .compact-text p {{
+                margin: 0;
+                padding: 0;
+                line-height: 1.2;
+            }}
+        </style>
+        <div class="compact-text">
+            <p>Valor da Entrada (R$): <strong>{format_reais(valor_entrada_financiamento)}</strong></p>
+            <p>✨ Valor Financiado: <strong>{format_reais(valor_principal_financiamento)}</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 limite_embutido = 0.50 if tipo == "Imóvel" else 0.30
@@ -192,7 +209,7 @@ if not erro_embutido:
         valor_carta_float = float(st.session_state.valor_carta.replace(".", "").replace(",", "."))
         taxa_total = taxa_admin + fundo_reserva
 
-        # --- CÁLCULOS ---
+        # --- CÁLCULOS DO CONSERCIO SEM CORREÇÃO ---
         total_sem_lance = valor_carta_float * (1 + taxa_total / 100)
         parcela_sem_lance = total_sem_lance / prazo
         valor_lance_padrao = valor_carta_float * (lance_proprio_sem / 100)
@@ -207,7 +224,7 @@ if not erro_embutido:
         total_corrigido = valor_carta_ajustado_para_embutido * (1 + taxa_total / 100)
         parcela_sem_contemplacao_embutido = total_corrigido / prazo
         valor_lance_proprio_com_calc = valor_carta_ajustado_para_embutido * (lance_proprio_com / 100)
-        valor_lance_embutido_com_calc = valor_carta_ajustado_para_embutido * (lance_embutido / 100)
+        valor_lance_embutido_com_calc = valor_carta_ajustado_com_embutido_preview * (lance_embutido / 100)
         valor_total_lance_calc = valor_lance_proprio_com_calc + valor_lance_embutido_com_calc
         saldo_apos_contemplacao = total_corrigido - valor_total_lance_calc
         parcela_contemplacao_total = saldo_apos_contemplacao / prazo
@@ -220,15 +237,54 @@ if not erro_embutido:
         saldo_para_aplicar_sem_lance = valor_carta_float - valor_lance_padrao
         rendimento_aplicacao_sem_lance = saldo_para_aplicar_sem_lance * ((1 + taxa_juros_mensal)**prazo)
         ganho_aplicacao_sem_lance = rendimento_aplicacao_sem_lance - saldo_para_aplicar_sem_lance
-        encargos_consorcio_sem_lance = valor_carta_float * (taxa_total / 100)
-        vantagem_liquida_sem_lance = ganho_aplicacao_sem_lance - encargos_consorcio_sem_lance
         
-        custo_adicional_total_taxas = (valor_carta_ajustado_para_embutido * (taxa_total / 100)) - (valor_carta_float * (taxa_total / 100))
-        custo_adicional_mensal_taxas = custo_adicional_total_taxas / prazo
+        # Definir as variáveis de custo e vantagem antes do bloco condicional
+        encargos_consorcio_sem_lance = total_sem_lance - valor_carta_float
+        vantagem_liquida_sem_lance_original = ganho_aplicacao_sem_lance - encargos_consorcio_sem_lance
+        
+        # Inicializar variáveis para o bloco condicional
+        total_sem_lance_corrigido_text = ""
+        total_com_lance_corrigido_text = ""
+        custo_consorcio_corrigido_text = ""
+        vantagem_liquida_corrigido_text = ""
+        total_inpc_percentual = 0
+        inpc_text = ""
+        vantagem_liquida_sem_lance_corrigido = vantagem_liquida_sem_lance_original
+        encargos_consorcio_corrigido = encargos_consorcio_sem_lance
 
-        percentual_embutido_sobre_credito = (valor_lance_embutido_com_calc / valor_carta_float) * 100
+        if usar_inpc and fator_inpc_pct > 0:
+            inpc_text = " | Corrigido INPC"
+            fator_anual = 1 + fator_inpc_pct / 100
+            
+            # Cálculo para cenário Sem Lance Embutido
+            total_sem_lance_corrigido = 0
+            for i in range(1, prazo + 1):
+                ano = (i - 1) // 12
+                total_sem_lance_corrigido += parcela_sem_lance * (fator_anual ** ano)
+            
+            # Cálculo para cenário Com Lance Embutido
+            total_com_lance_corrigido = 0
+            for i in range(1, prazo + 1):
+                ano = (i - 1) // 12
+                total_com_lance_corrigido += parcela_sem_contemplacao_embutido * (fator_anual ** ano)
+            
+            encargos_consorcio_corrigido = total_sem_lance_corrigido - valor_carta_float
+            vantagem_liquida_sem_lance_corrigido = ganho_aplicacao_sem_lance - encargos_consorcio_corrigido
+            
+            # Cálculo de juros compostos para o percentual de acréscimo
+            prazo_em_anos = prazo / 12
+            total_inpc_percentual = ((1 + fator_inpc_pct / 100)**prazo_em_anos - 1) * 100
+            
+            total_sem_lance_corrigido_text = f" ({format_reais(total_sem_lance_corrigido)}*)"
+            
+            encargos_consorcio_com_lance_corrigido = total_com_lance_corrigido - valor_carta_ajustado_para_embutido
+            custo_efetivo_com_lance_corrigido = valor_carta_float + encargos_consorcio_com_lance_corrigido
+            total_com_lance_corrigido_text = f" ({format_reais(custo_efetivo_com_lance_corrigido)}*)"
+            
+            custo_consorcio_corrigido_text = f" ({format_reais(encargos_consorcio_corrigido)}*)"
+            vantagem_liquida_corrigido_text = f" ({format_reais(vantagem_liquida_sem_lance_corrigido)}*)"
 
-        # Novos cálculos
+        # Novos cálculos de financiamento
         taxa_mensal_financiamento = (taxa_juros_financiamento / 100) / 12
         if taxa_mensal_financiamento > 0:
             parcela_financiamento = valor_principal_financiamento * taxa_mensal_financiamento / (1 - (1 + taxa_mensal_financiamento)**-prazo_financiamento)
@@ -239,6 +295,9 @@ if not erro_embutido:
         
         diferenca_custo_total = custo_total_financiamento - total_sem_lance
         diferenca_parcela_comparativo = parcela_financiamento - parcela_padrao
+        
+        # Novos cálculos de custo efetivo do consórcio
+        custo_efetivo_com_lance = valor_carta_float + (total_corrigido - valor_carta_ajustado_para_embutido)
 
         # --- FIM DOS CÁLCULOS ---
 
@@ -267,30 +326,38 @@ Lance Embutido ({int(lance_embutido)}%): {format_reais(valor_lance_embutido_com_
 Valor TOTAL do lance: {format_reais(valor_total_lance_calc)}
 Prazo: {prazo} meses
 """
+        bloco_analise_vantagem_pdf = f"""
+    **Cenário Sem Lance Embutido:**
+        Valor para aplicar: {format_reais(saldo_para_aplicar_sem_lance)} (Montante: {format_reais(saldo_para_aplicar_sem_lance + ganho_aplicacao_sem_lance)})
+        Rendimento da aplicação: {format_reais(ganho_aplicacao_sem_lance)}
+        Custo do Consórcio: {format_reais(encargos_consorcio_sem_lance)}{inpc_text}{custo_consorcio_corrigido_text}
+        Vantagem líquida: {format_reais(vantagem_liquida_sem_lance_original)}{inpc_text}{vantagem_liquida_corrigido_text}
+
+Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao invés de usar o valor total à vista, o cliente utiliza parte do recurso para dar o lance, e o restante é aplicado em um investimento de renda fixa. A análise compara o rendimento dessa aplicação com os encargos do consórcio, demonstrando a vantagem financeira líquida da operação.
+"""
+            
         bloco_analise_custo_pdf = f"""
 **Análise de Custo e Comparativo**
-| Cenário | Custo Total do Plano |
+| Cenário | Custo do crédito |
 |:---|:---:|
-| Sem Lance Embutido | {format_reais(total_sem_lance)} |
-| Com Lance Embutido | {format_reais(total_corrigido)} |
+| Sem Lance Embutido | {format_reais(total_sem_lance)}{inpc_text}{total_sem_lance_corrigido_text} |
+| Com Lance Embutido | {format_reais(custo_efetivo_com_lance)}{inpc_text}{total_com_lance_corrigido_text} |
 | Financiamento | {format_reais(custo_total_financiamento)} |
 """
+        
+        # Adiciona a informação do INPC apenas se o checkbox estiver ativo
+        if usar_inpc:
+             bloco_analise_custo_pdf += f"""
+Percentual de acréscimo INPC durante o período: {total_inpc_percentual:.2f}%
+"""
+
         bloco_analise_custo_extra_pdf = f"""
 Total de taxas: {taxa_total:.2f}%
 Taxa equivalente mensal: {taxa_mensal_total:.2f}%
 Taxa equivalente anual: {taxa_anual_total:.2f}%
 Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance): {format_reais(diferenca_parcela_pos_contemplacao)}
 """
-
-        bloco_analise_vantagem_pdf = f"""
-    **Cenário Sem Lance Embutido:**
-        Valor para aplicar: {format_reais(saldo_para_aplicar_sem_lance)} (Montante: {format_reais(saldo_para_aplicar_sem_lance + ganho_aplicacao_sem_lance)})
-        Rendimento da aplicação: {format_reais(ganho_aplicacao_sem_lance)}
-        Custo do Consórcio: {format_reais(encargos_consorcio_sem_lance)}
-        Vantagem líquida: {format_reais(vantagem_liquida_sem_lance)}
-
-Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao invés de usar o valor total à vista, o cliente utiliza parte do recurso para dar o lance, e o restante é aplicado em um investimento de renda fixa. A análise compara o rendimento dessa aplicação com os encargos do consórcio, demonstrando a vantagem financeira líquida da operação.
-"""
+        
         bloco_comparativo_financiamento_pdf = f"""
 **Simulação de Financiamento**
     - Valor do Crédito Base: {format_reais(valor_financiamento_base)}
