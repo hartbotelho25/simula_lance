@@ -49,7 +49,7 @@ with col_form:
         valor_carta_formatado = format_input_valor(valor_carta_input)
         st.session_state.valor_carta = valor_carta_formatado
 
-        prazo_maximo = 240 if tipo == "Imóvel" else 80
+        prazo_maximo = 240 if tipo == "Imóvel" else 100
         prazo = st.number_input("Prazo (meses)", min_value=1, max_value=prazo_maximo, step=1, value=st.session_state.prazo)
 
         if prazo > prazo_maximo:
