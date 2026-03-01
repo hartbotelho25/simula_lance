@@ -156,7 +156,8 @@ with col_lance:
                 percentual_ajustado = (valor_em_reais_do_sem_lance / valor_carta_ajustado_com_embutido) * 100
             else:
                 percentual_ajustado = 0
-            
+            # Força o valor do widget a refletir o lance próprio (R$) do "sem lance" para o "com lance"
+            st.session_state["com_lance_proprio"] = percentual_ajustado
             lance_proprio_com = st.number_input("Lance Próprio (%)", min_value=0.0, max_value=100.0, step=0.1, value=percentual_ajustado, disabled=True, format="%.2f", key="com_lance_proprio")
         else:
             lance_proprio_com = st.number_input("Lance Próprio (%)", min_value=0, max_value=100, step=1, value=10, key="com_lance_proprio")
