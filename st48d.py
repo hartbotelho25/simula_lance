@@ -1,8 +1,10 @@
 import streamlit as st
+from streamlit.components.v1 import html as st_components_html
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import io
 import re
+import pandas as pd
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -22,6 +24,33 @@ def format_input_valor(valor_str):
         return valor_str
 
 st.set_page_config(page_title="Simulador de Consórcio", layout="wide")
+
+# Layout compacto: reduz ao máximo o espaço entre blocos
+st.markdown("""
+    <style>
+    section.main .block-container { padding-top: 1rem; padding-bottom: 0.5rem; max-width: 100%; }
+    div[data-testid="stVerticalBlock"] > div { padding-top: 0 !important; padding-bottom: 0 !important; }
+    div[data-testid="stVerticalBlock"] { gap: 0 !important; }
+    div[data-testid="element-container"] { margin-bottom: -0.5rem !important; padding-bottom: 0 !important; }
+    .stMarkdown { margin-bottom: 0 !important; margin-top: 0.2rem !important; }
+    .stMarkdown h3 { margin-top: 0.4rem !important; margin-bottom: 0.3rem !important; }
+    hr { margin: 0.4rem 0 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Controle para exibir/ocultar a janela de análise visual da vantagem financeira
+if "exibir_lab_vantagem" not in st.session_state:
+    st.session_state.exibir_lab_vantagem = False
+# Valores únicos: taxa de juros e INPC (alterados no painel principal ou no detalhe)
+if "taxa_juros_anual" not in st.session_state:
+    st.session_state.taxa_juros_anual = 6.0
+if "usar_inpc" not in st.session_state:
+    st.session_state.usar_inpc = True
+if "fator_inpc_pct" not in st.session_state:
+    st.session_state.fator_inpc_pct = 4.5
+# Flag: True só quando o slide do detalhe atualizou os canônicos (para não sobrescrever edição do menu principal)
+if "sync_from_detail" not in st.session_state:
+    st.session_state.sync_from_detail = False
 st.markdown("<h6 style='text-align: center; color: gray;'>Desenvolvido por Hart Botelho</h6>", unsafe_allow_html=True)
 st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Feliz 2026 e excelentes negócios!</h6>", unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
@@ -55,35 +84,41 @@ with col_form:
         if prazo > prazo_maximo:
             st.info(f"O prazo máximo para {tipo.lower()} é de {prazo_maximo} meses.")
         
-        observacoes = st.text_area("Observações Adicionais", height=150)
+        observacoes = st.text_area("Observações Adicionais", height=70)
 
     with col2:
+        # Só copia canônicos para os inputs quando a alteração veio do slide do detalhe (evita “travar” o menu principal)
+        if st.session_state.sync_from_detail:
+            st.session_state["taxa_juros_anual_input"] = float(st.session_state.taxa_juros_anual)
+            st.session_state["usar_inpc_input"] = st.session_state.usar_inpc
+            st.session_state["fator_inpc_pct_input"] = float(st.session_state.fator_inpc_pct)
+            st.session_state.sync_from_detail = False
+
         fundo_reserva = st.number_input("Fundo de Reserva (%)", min_value=0.0, step=0.1, value=3.0, format="%.1f")
         taxa_admin = st.number_input("Taxa de Administração (%)", min_value=0.0, step=0.1, value=15.0, format="%.1f")
-        taxa_juros_anual = st.number_input("Taxa de Juros Anual da Aplicação (%)", min_value=0.0, step=0.1, value=6.0, format="%.1f")
-        
-        usar_inpc = st.checkbox("Habilitar Fator de Correção INPC", value=True)
-        fator_inpc_pct = 0
-        if usar_inpc:
-            fator_inpc_pct = st.number_input("Fator de correção INPC (%) - média anual", min_value=0.0, step=0.1, value=4.5, format="%.1f")
+        st.number_input(
+            "Taxa de Juros Anual da Aplicação (%)",
+            min_value=0.0, step=0.1, value=float(st.session_state.taxa_juros_anual), format="%.1f", key="taxa_juros_anual_input"
+        )
+        st.checkbox("Habilitar Fator de Correção INPC", value=st.session_state.usar_inpc, key="usar_inpc_input")
+        if st.session_state.usar_inpc_input:
+            st.number_input(
+                "Fator de correção INPC (%) - média anual",
+                min_value=0.0, step=0.1, value=float(st.session_state.fator_inpc_pct), format="%.1f", key="fator_inpc_pct_input"
+            )
 
-    st.markdown("---")
-    st.markdown("### 📥 Selecionar itens para PDF")
-    
-    col_pdf1, col_pdf2, col_pdf3, col_pdf4, col_pdf5, col_pdf6 = st.columns(6)
-    with col_pdf1:
-        incluir_sem_lance = st.checkbox("[1] Sem Lance Embutido", value=True, key="incluir_sem_lance")
-    with col_pdf2:
-        incluir_com_lance = st.checkbox("[2] Com Lance Embutido", value=True, key="incluir_com_lance")
-    with col_pdf3:
-        incluir_comparativo_financiamento = st.checkbox("[3] Financiamento", value=True, key="incluir_comparativo")
-    with col_pdf4:
-        incluir_analise_vantagem = st.checkbox("[4] Vantagem Financeira", value=True, key="incluir_analise_vantagem")
-    with col_pdf5:
-        incluir_analise_custo = st.checkbox("[5] Análise de Custo", value=True, key="incluir_analise_custo")
-    with col_pdf6:
-        incluir_observacoes = st.checkbox("[6] Observações", value=True, key="incluir_observacoes")
-        
+    # Sincroniza valores do formulário principal com os canônicos (usados em toda a simulação)
+    st.session_state.taxa_juros_anual = st.session_state.get("taxa_juros_anual_input", st.session_state.taxa_juros_anual)
+    st.session_state.usar_inpc = st.session_state.get("usar_inpc_input", st.session_state.usar_inpc)
+    if st.session_state.usar_inpc_input:
+        st.session_state.fator_inpc_pct = st.session_state.get("fator_inpc_pct_input", st.session_state.fator_inpc_pct)
+    else:
+        st.session_state.fator_inpc_pct = 0.0
+
+    taxa_juros_anual = st.session_state.taxa_juros_anual
+    usar_inpc = st.session_state.usar_inpc
+    fator_inpc_pct = st.session_state.fator_inpc_pct
+
 with col_lance:
     try:
         valor_carta_float_preview = float(st.session_state.valor_carta.replace(".", "").replace(",", "."))
@@ -99,8 +134,7 @@ with col_lance:
         valor_lance_proprio_sem = valor_carta_float_preview * (lance_proprio_sem / 100)
         st.markdown(f"**{format_reais(valor_lance_proprio_sem)}**")
 
-    st.markdown("---")
-    
+    st.markdown("<div style='margin: 0.2rem 0; border-top: 1px solid #eee;'></div>", unsafe_allow_html=True)
     col_titulo_com_lance, col_trava_lance = st.columns([2, 1])
     with col_titulo_com_lance:
         st.markdown("### 🎯 Com Lance Embutido")
@@ -150,9 +184,8 @@ with col_lance:
     total_lance_pct = lance_proprio_com + lance_embutido
     st.markdown(f"💰 **Total do Lance com Embutido: {int(total_lance_pct)}% — {format_reais(valor_total_lance_com)}**")
 
-    st.markdown(f"### <p style='text-align: center; color: #2c3e50;'>Base de Cálculo (Carta Ajustada): {format_reais(valor_carta_ajustado_com_embutido_preview)}</p>", unsafe_allow_html=True)
-    
-    st.markdown("---")
+    st.markdown(f"### <p style='text-align: center; color: #2c3e50; margin: 0.3rem 0;'>Base de Cálculo (Carta Ajustada): {format_reais(valor_carta_ajustado_com_embutido_preview)}</p>", unsafe_allow_html=True)
+    st.markdown("<div style='margin: 0.2rem 0; border-top: 1px solid #eee;'></div>", unsafe_allow_html=True)
     st.markdown("### 🏦 Simulação de Financiamento")
     
     col_finan1, col_finan2 = st.columns(2)
@@ -288,7 +321,7 @@ if not erro_embutido:
             
             custo_consorcio_corrigido_text = f" ({format_reais(encargos_consorcio_corrigido)}*)"
             vantagem_liquida_corrigido_text = f" ({format_reais(vantagem_liquida_sem_lance_corrigido)}*)"
-        
+
         valor_principal_financiamento = valor_financiamento_base - valor_entrada_financiamento
         taxa_mensal_financiamento = (1 + taxa_juros_financiamento / 100)**(1/12) - 1
         if taxa_mensal_financiamento > 0:
@@ -304,6 +337,26 @@ if not erro_embutido:
 
         # --- FIM DOS CÁLCULOS ---
 
+        # Seleção dos blocos que irão para o PDF (próxima do download, layout compacto)
+        st.markdown("### 📥 Selecionar itens para PDF")
+        col_pdf1, col_pdf2, col_pdf3, col_pdf4, col_pdf5, col_pdf6 = st.columns(6)
+        with col_pdf1:
+            incluir_sem_lance = st.checkbox("[1] Sem Lance Embutido", value=True, key="incluir_sem_lance")
+        with col_pdf2:
+            incluir_com_lance = st.checkbox("[2] Com Lance Embutido", value=True, key="incluir_com_lance")
+        with col_pdf3:
+            incluir_comparativo_financiamento = st.checkbox("[3] Financiamento", value=True, key="incluir_comparativo")
+        with col_pdf4:
+            incluir_analise_vantagem = st.checkbox("[4] Vantagem Financeira", value=True, key="incluir_analise_vantagem")
+            _c1, _c2, _c3 = st.columns([1, 2, 1])
+            with _c2:
+                if st.button("+ Detalhes", key="abrir_lab_vantagem"):
+                    st.session_state.exibir_lab_vantagem = True
+        with col_pdf5:
+            incluir_analise_custo = st.checkbox("[5] Análise de Custo", value=True, key="incluir_analise_custo")
+        with col_pdf6:
+            incluir_observacoes = st.checkbox("[6] Observações", value=True, key="incluir_observacoes")
+
         # CONSTRUÇÃO DINÂMICA DA TABELA DE CUSTO
         bloco_analise_custo_pdf = "**Análise de Custo e Comparativo**\n| Cenário | Custo do crédito |\n|:---|:---:|\n"
         if incluir_sem_lance:
@@ -316,13 +369,7 @@ if not erro_embutido:
         if usar_inpc:
              bloco_analise_custo_pdf += f"\nPercentual de acréscimo INPC durante o período: {total_inpc_percentual:.2f}%\n"
 
-        bloco_analise_custo_extra_pdf = f"""
-Total de taxas: {taxa_total:.2f}%
-Taxa equivalente mensal do Consórcio: {taxa_mensal_total:.2f}%
-Taxa equivalente mensal do Financiamento: {taxa_mensal_financiamento * 100:.2f}%
-Taxa equivalente anual do Consórcio: {taxa_anual_total:.2f}%
-Diferença entre parcelas pós-contemplação - (Com Lance Embutido - Sem Lance): {format_reais(diferenca_parcela_pos_contemplacao)}
-"""
+        bloco_analise_custo_extra_pdf = ""
         
         bloco_sem_lance_pdf = f"""
 Cenário: Sem Lance Embutido
@@ -475,9 +522,10 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
             
             Story.append(Spacer(1, 12))
 
-            for line in bloco_analise_custo_extra_pdf.strip().split('\n'):
-                Story.append(Paragraph(line, styles['NormalText']))
-            Story.append(Spacer(1, 12))
+            if bloco_analise_custo_extra_pdf.strip():
+                for line in bloco_analise_custo_extra_pdf.strip().split('\n'):
+                    Story.append(Paragraph(line, styles['NormalText']))
+                Story.append(Spacer(1, 12))
 
         if incluir_observacoes and observacoes.strip():
             Story.append(Paragraph("OBSERVACÕES ADICIONAIS", styles['CustomHeading']))
@@ -487,9 +535,171 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
 
         doc.build(Story)
         buffer.seek(0)
-        
+
         st.download_button("📥 Download PDF", buffer, file_name="simulacao_consorcio.pdf", mime="application/pdf")
+
         st.markdown("### 🧾 Resultado da Simulação")
-        st.text_area("Resumo", resultado.strip(), height=800)
+        st.text_area("Resumo", resultado.strip(), height=420)
+
+        # Janela separada de análise visual, acionada pelo botão na área da Vantagem Financeira
+        if st.session_state.get("exibir_lab_vantagem", False) and incluir_analise_vantagem:
+            st.markdown(
+                "<div id='secao-analise-vantagem' style='margin-top: 1.2rem;'></div>"
+                "<script>(function(){ var el = document.getElementById('secao-analise-vantagem'); if (el) setTimeout(function(){ el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 300); })();</script>",
+                unsafe_allow_html=True,
+            )
+            st.markdown("### 🔍 Análise visual da vantagem financeira")
+            st.caption("Altere a taxa de juros ou o INPC abaixo: os valores são replicados automaticamente no painel principal e no resultado da simulação (uma única simulação para o cliente).")
+
+            # Controles sincronizados com o painel principal (alterar aqui atualiza a simulação toda)
+            col_ctrl1, col_ctrl2 = st.columns(2)
+            with col_ctrl1:
+                taxa_juros_anual_lab = st.slider(
+                    "Taxa de juros anual da aplicação (%)",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=float(st.session_state.taxa_juros_anual),
+                    step=0.1,
+                    key="taxa_juros_anual_lab",
+                )
+            with col_ctrl2:
+                fator_inpc_lab = st.slider(
+                    "INPC médio anual (%)",
+                    min_value=0.0,
+                    max_value=20.0,
+                    value=float(st.session_state.fator_inpc_pct) if st.session_state.usar_inpc else 0.0,
+                    step=0.1,
+                    key="fator_inpc_lab",
+                )
+
+            # Replicar no painel principal: ao mudar aqui, atualiza a simulação central e força novo cálculo
+            if (taxa_juros_anual_lab != st.session_state.taxa_juros_anual or
+                fator_inpc_lab != (st.session_state.fator_inpc_pct if st.session_state.usar_inpc else 0.0)):
+                st.session_state.taxa_juros_anual = taxa_juros_anual_lab
+                st.session_state.fator_inpc_pct = fator_inpc_lab
+                st.session_state.usar_inpc = (fator_inpc_lab > 0)
+                st.session_state.sync_from_detail = True  # para o menu principal refletir os valores do slide
+                st.rerun()
+
+            # Recalcula apenas a parte da aplicação com a taxa da janela
+            taxa_juros_mensal_lab = (1 + taxa_juros_anual_lab / 100)**(1/12) - 1
+            rendimento_aplicacao_lab = saldo_para_aplicar_sem_lance * ((1 + taxa_juros_mensal_lab)**prazo)
+            ganho_lab = rendimento_aplicacao_lab - saldo_para_aplicar_sem_lance
+
+            # Recalcula o efeito do INPC apenas para esta análise
+            encargos_consorcio_corrigido_lab = None
+            vantagem_liquida_lab_corrigida = None
+            if fator_inpc_lab > 0:
+                fator_anual_lab = 1 + fator_inpc_lab / 100
+
+                total_acrescimo_sem_lance_lab = 0
+                for i in range(1, prazo + 1):
+                    ano = (i - 1) // 12
+                    parcela_corrigida_lab = parcela_padrao * (fator_anual_lab ** ano)
+                    total_acrescimo_sem_lance_lab += (parcela_corrigida_lab - parcela_padrao)
+
+                custo_corrigido_sem_lance_total_lab = custo_sem_lance_sem_inpc_total + total_acrescimo_sem_lance_lab
+                encargos_consorcio_corrigido_lab = custo_corrigido_sem_lance_total_lab - valor_carta_float
+                vantagem_liquida_lab_corrigida = ganho_lab - encargos_consorcio_corrigido_lab
+
+            # Dados para a narrativa "escolha certa" (apenas neste detalhamento)
+            total_prestacoes_mais_lance = custo_corrigido_sem_lance_total_lab if (fator_inpc_lab > 0) else custo_sem_lance_sem_inpc_total
+            montante_aplicacao = saldo_para_aplicar_sem_lance + ganho_lab
+            desembolso_extra = total_prestacoes_mais_lance - valor_carta_float  # taxa de conveniência (pago ao longo do prazo)
+            lucro_real = montante_aplicacao - desembolso_extra  # vantagem real sobre quem comprou à vista
+            patrimonio_final_avista = valor_carta_float
+            patrimonio_final_consorcio = valor_carta_float + montante_aplicacao
+            prazo_anos = prazo / 12
+            vantagem_liquida_lab_sem_inpc = ganho_lab - encargos_consorcio_sem_lance
+
+            # Ponto de inversão: primeiro mês em que os juros mensais da aplicação superam a parcela
+            mes_inversao = None
+            for m in range(1, int(prazo) + 1):
+                valor_aplicacao_mes = saldo_para_aplicar_sem_lance * ((1 + taxa_juros_mensal_lab) ** m)
+                juros_mensais = valor_aplicacao_mes * taxa_juros_mensal_lab
+                if juros_mensais >= parcela_padrao:
+                    mes_inversao = m
+                    break
+
+            # ----- Patrimônio final comparativo -----
+            st.markdown("##### Patrimônio final comparativo")
+            col_avista, col_consorcio = st.columns(2)
+            with col_avista:
+                st.metric("Compra à vista", format_reais(patrimonio_final_avista), help="Apenas o bem")
+            with col_consorcio:
+                st.metric("Consórcio estruturado", format_reais(patrimonio_final_consorcio), help="Bem + dinheiro no banco")
+
+            # ----- Resumo da aplicação e do consórcio (pares: valor aplicado|prazo, juros|montante, parcelas|vantagem INPC) -----
+            total_so_prestacoes = total_prestacoes_mais_lance - valor_lance_padrao
+            titulo_prestacoes = "Total das parcelas pagas (com INPC)" if fator_inpc_lab > 0 else "Total das parcelas pagas"
+            st.markdown("##### Resumo da aplicação e do consórcio")
+            col_valor_apl, col_prazo = st.columns(2)
+            with col_valor_apl:
+                st.metric("Valor aplicado", format_reais(saldo_para_aplicar_sem_lance))
+            with col_prazo:
+                st.metric("Prazo do consórcio", f"{int(prazo)} meses", help=f"({prazo/12:.1f} anos)")
+            col_juros, col_montante = st.columns(2)
+            with col_juros:
+                st.metric("Total de juros (aplicação)", format_reais(ganho_lab))
+            with col_montante:
+                st.metric("Montante do capital", format_reais(montante_aplicacao), help="Valor aplicado + juros")
+            col_parcelas, col_vantagem = st.columns(2)
+            with col_parcelas:
+                st.metric(titulo_prestacoes, format_reais(total_so_prestacoes))
+            with col_vantagem:
+                if fator_inpc_lab > 0 and vantagem_liquida_lab_corrigida is not None:
+                    st.metric("Vantagem líquida (com INPC)", format_reais(vantagem_liquida_lab_corrigida))
+                else:
+                    st.metric("Vantagem líquida (com INPC)", "—", help="Informe INPC na análise para calcular")
+
+            # ----- Destaque: ponto de inversão -----
+            if mes_inversao is not None:
+                st.success(
+                    f"**A partir do mês {mes_inversao}**, os juros mensais da aplicação passam a superar a parcela: o investimento passa a \"pagar\" o consórcio."
+                )
+
+            # Opção de download dos dados da análise em PDF
+            buffer_analise = io.BytesIO()
+            doc_analise = SimpleDocTemplate(
+                buffer_analise,
+                pagesize=A4,
+                rightMargin=inch,
+                leftMargin=inch,
+                topMargin=inch,
+                bottomMargin=inch,
+            )
+
+            StoryAnalise = []
+            StoryAnalise.append(Paragraph("📊 Análise de Vantagem Financeira - Detalhes", styles["CustomTitle"]))
+            StoryAnalise.append(Spacer(1, 12))
+
+            StoryAnalise.append(Paragraph("Patrimônio final comparativo", styles["CustomHeading"]))
+            StoryAnalise.append(Paragraph(f"Compra à vista (apenas o bem): {format_reais(patrimonio_final_avista)}", styles["NormalText"]))
+            StoryAnalise.append(Paragraph(f"Consórcio estruturado (bem + dinheiro no banco): {format_reais(patrimonio_final_consorcio)}", styles["NormalText"]))
+            StoryAnalise.append(Spacer(1, 6))
+
+            titulo_prestacoes_pdf = "Total das parcelas pagas (com INPC)" if fator_inpc_lab > 0 else "Total das parcelas pagas"
+            StoryAnalise.append(Paragraph("Resumo da aplicação e do consórcio", styles["CustomHeading"]))
+            StoryAnalise.append(Paragraph(f"Valor aplicado: {format_reais(saldo_para_aplicar_sem_lance)} | Prazo do consórcio: {int(prazo)} meses", styles["NormalText"]))
+            StoryAnalise.append(Paragraph(f"Total de juros (aplicação): {format_reais(ganho_lab)} | Montante do capital: {format_reais(montante_aplicacao)}", styles["NormalText"]))
+            vantagem_pdf = format_reais(vantagem_liquida_lab_corrigida) if (fator_inpc_lab > 0 and vantagem_liquida_lab_corrigida is not None) else "—"
+            StoryAnalise.append(Paragraph(f"{titulo_prestacoes_pdf}: {format_reais(total_so_prestacoes)} | Vantagem líquida (com INPC): {vantagem_pdf}", styles["NormalText"]))
+            StoryAnalise.append(Spacer(1, 6))
+
+            if mes_inversao is not None:
+                StoryAnalise.append(Paragraph(f"A partir do mês {mes_inversao}, os juros mensais da aplicação superam a parcela: o investimento passa a pagar o consórcio.", styles["NormalText"]))
+            StoryAnalise.append(Spacer(1, 6))
+
+            StoryAnalise.append(Paragraph(f"Taxa de juros (análise): {taxa_juros_anual_lab:.2f}% a.a. | INPC (análise): {fator_inpc_lab:.2f}% a.a.", styles["SmallText"]))
+
+            doc_analise.build(StoryAnalise)
+            buffer_analise.seek(0)
+
+            st.download_button(
+                "📥 Download análise em PDF",
+                buffer_analise,
+                file_name="analise_vantagem_financeira.pdf",
+                mime="application/pdf",
+            )
     except Exception as e:
         st.error(f"Erro no cálculo: {e}")
