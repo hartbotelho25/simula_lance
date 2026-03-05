@@ -466,8 +466,8 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
     - Valor do Crédito Base: {format_reais(valor_financiamento_base)}
     - Entrada ({entrada_financiamento_pct}%): {format_reais(valor_entrada_financiamento)}
     - Valor Financiado: {format_reais(valor_principal_financiamento)}
-    - Parcela Mensal: {format_reais(parcela_financiamento)}
-    - Taxa de Juros Anual: {taxa_juros_financiamento:.2f}% | Mensal: {taxa_mensal_financiamento * 100:.2f}%
+    - Parcela Mensal (CET): {format_reais(parcela_financiamento_cet)}
+    - Taxa nominal: {taxa_juros_financiamento:.2f}% a.a. | Mensal: {taxa_mensal_financiamento * 100:.2f}%
     - CET anual: {cet_anual:.2f}% | CET mensal: {taxa_mensal_cet * 100:.2f}%
     - Prazo: {prazo_financiamento} meses
     - Total Pago (CET): {format_reais(custo_total_financiamento_cet)}
