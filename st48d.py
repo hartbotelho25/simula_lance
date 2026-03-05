@@ -54,7 +54,7 @@ if "sync_from_detail" not in st.session_state:
 st.markdown("""
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
     <div style="font-family: 'Outfit', sans-serif; text-align: center;">
-        <p style="font-size: 1.12rem; color: #334155; letter-spacing: 0.12em; font-weight: 600; margin: 0 0 0.6rem 0; text-transform: uppercase;">Desenvolvido por Hart Botelho</p>
+        <p style="font-size: 1.12rem; color: #334155; letter-spacing: 0.12em; font-weight: 600; margin: 0 0 0.6rem 0; text-transform: uppercase;">Desenvolvido por Hart Botelho, CFP®</p>
         <p style="font-size: 0.95rem; color: #64748b; letter-spacing: 0.04em; font-weight: 400; margin: 0;">Feliz 2026 e excelentes negócios!</p>
     </div>
     """, unsafe_allow_html=True)
