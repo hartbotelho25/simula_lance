@@ -3,8 +3,8 @@ from streamlit.components.v1 import html as st_components_html
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import io
+import math
 import re
-import pandas as pd
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -51,8 +51,13 @@ if "fator_inpc_pct" not in st.session_state:
 # Flag: True só quando o slide do detalhe atualizou os canônicos (para não sobrescrever edição do menu principal)
 if "sync_from_detail" not in st.session_state:
     st.session_state.sync_from_detail = False
-st.markdown("<h6 style='text-align: center; color: gray;'>Desenvolvido por Hart Botelho</h6>", unsafe_allow_html=True)
-st.markdown("<h6 style='text-align: center; color: gray; font-size: small;'>Feliz 2026 e excelentes negócios!</h6>", unsafe_allow_html=True)
+st.markdown("""
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+    <div style="font-family: 'Outfit', sans-serif; text-align: center;">
+        <p style="font-size: 1.12rem; color: #334155; letter-spacing: 0.12em; font-weight: 600; margin: 0 0 0.6rem 0; text-transform: uppercase;">Desenvolvido por Hart Botelho</p>
+        <p style="font-size: 0.95rem; color: #64748b; letter-spacing: 0.04em; font-weight: 400; margin: 0;">Feliz 2026 e excelentes negócios!</p>
+    </div>
+    """, unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
 st.markdown("### 📋 Informações da Simulação")
 
@@ -200,6 +205,8 @@ with col_lance:
             valor_financiamento_base = valor_carta_float_preview
 
         prazo_financiamento = st.number_input("Prazo (meses)", min_value=1, step=1, value=prazo, key="prazo_finan")
+        
+        entrada_financiamento_pct = st.number_input("Entrada (%)", min_value=0, max_value=100, step=1, value=20, key="entrada_financiamento_pct")
     
     with col_finan2:
         taxa_juros_financiamento = st.number_input("Taxa de Juros (% a.a.)", min_value=0.0, step=0.1, value=9.5, format="%.1f", key="taxa_financiamento")
@@ -207,24 +214,24 @@ with col_lance:
         taxa_mensal_financiamento_info = (1 + taxa_juros_financiamento / 100)**(1/12) - 1
         st.markdown(f"**Taxa Equivalente Mensal:** {taxa_mensal_financiamento_info * 100:.2f}%")
         
-        entrada_financiamento_pct = st.number_input("Entrada (%)", min_value=0, max_value=100, step=1, value=20, key="entrada_financiamento_pct")
+        cet_acrescimo_default = 1.5 if tipo == "Imóvel" else 3.0
+        cet_acrescimo = st.number_input("CET acréscimo (% a.a.)", min_value=1.0, max_value=4.0, step=0.1, value=float(cet_acrescimo_default), format="%.1f", key="cet_acrescimo", help="Acréscimo sobre a taxa nominal para obter o CET. Média imóvel 1,5% a.a. | Veículo 3% a.a.")
+        st.caption("Média imóvel 1,5% a.a. | Veículo 3% a.a.")
+        cet_aprox_preview = taxa_juros_financiamento + cet_acrescimo
+        st.markdown(f"**CET (aprox.):** {cet_aprox_preview:.2f}%")
         
         valor_entrada_financiamento = valor_financiamento_base * (entrada_financiamento_pct / 100)
         valor_principal_financiamento = valor_financiamento_base - valor_entrada_financiamento
-        
-        st.markdown(f"""
-        <style>
-            .compact-text p {{
-                margin: 0;
-                padding: 0;
-                line-height: 1.2;
-            }}
-        </style>
-        <div class="compact-text">
-            <p>Valor da Entrada (R$): <strong>{format_reais(valor_entrada_financiamento)}</strong></p>
-            <p>✨ Valor Financiado: <strong>{format_reais(valor_principal_financiamento)}</strong></p>
-        </div>
-        """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <style>
+        .compact-text p {{ margin: 0; padding: 0; line-height: 1.2; }}
+    </style>
+    <div class="compact-text">
+        <p>Valor da Entrada (R$): <strong>{format_reais(valor_entrada_financiamento)}</strong></p>
+        <p>✨ Valor Financiado: <strong>{format_reais(valor_principal_financiamento)}</strong></p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 limite_embutido = 0.50 if tipo == "Imóvel" else 0.30
@@ -263,6 +270,16 @@ if not erro_embutido:
         saldo_apos_contemplacao = total_com_lance - valor_total_lance_calc
         parcela_contemplacao_total = saldo_apos_contemplacao / prazo
 
+        # --- PRAZO COM CONTEMPLAÇÃO (amortização no prazo: mesma parcela, menos meses) ---
+        if parcela_sem_lance > 0:
+            prazo_com_contemplacao_sem = max(1, round(saldo_apos_padrao / parcela_sem_lance))
+        else:
+            prazo_com_contemplacao_sem = prazo
+        if parcela_sem_contemplacao_embutido > 0:
+            prazo_com_contemplacao_com = max(1, round(saldo_apos_contemplacao / parcela_sem_contemplacao_embutido))
+        else:
+            prazo_com_contemplacao_com = prazo
+
         # --- CUSTO DO CRÉDITO - O TOTAL PAGO PELO CLIENTE (correção) ---
         custo_sem_lance_sem_inpc_total = (parcela_padrao * prazo) + valor_lance_padrao
         # AQUI FOI CORRIGIDO: usa apenas o lance próprio, não o lance total com o embutido
@@ -286,28 +303,26 @@ if not erro_embutido:
         vantagem_liquida_corrigido_text = ""
         total_inpc_percentual = 0
         inpc_text = ""
-        
+        texto_diferenca_amort_prazo = ""  # preenchido quando usar_inpc
+
         # --- CÁLCULO INPC CORRIGIDO ---
         if usar_inpc and fator_inpc_pct > 0:
             inpc_text = " | Corrigido INPC"
             fator_anual = 1 + fator_inpc_pct / 100
             
-            # --- Correção de cálculo do INPC para Sem Lance ---
+            # --- Correção de cálculo do INPC (por ano, menos iterações) ---
+            num_anos = (prazo + 11) // 12
             total_acrescimo_sem_lance = 0
-            for i in range(1, prazo + 1):
-                ano = (i - 1) // 12
-                parcela_corrigida = parcela_padrao * (fator_anual ** ano)
-                total_acrescimo_sem_lance += (parcela_corrigida - parcela_padrao)
-            
+            for ano in range(num_anos):
+                meses_ano = min(12, prazo - ano * 12)
+                total_acrescimo_sem_lance += meses_ano * parcela_padrao * ((fator_anual ** ano) - 1)
             custo_corrigido_sem_lance_total = custo_sem_lance_sem_inpc_total + total_acrescimo_sem_lance
             encargos_consorcio_corrigido = custo_corrigido_sem_lance_total - valor_carta_float
 
-            # --- Correção de cálculo do INPC para Com Lance ---
             total_acrescimo_com_lance = 0
-            for i in range(1, prazo + 1):
-                ano = (i - 1) // 12
-                parcela_corrigida = parcela_contemplacao_total * (fator_anual ** ano)
-                total_acrescimo_com_lance += (parcela_corrigida - parcela_contemplacao_total)
+            for ano in range(num_anos):
+                meses_ano = min(12, prazo - ano * 12)
+                total_acrescimo_com_lance += meses_ano * parcela_contemplacao_total * ((fator_anual ** ano) - 1)
             
             custo_corrigido_com_lance_total = custo_com_lance_sem_inpc_total + total_acrescimo_com_lance
             
@@ -323,6 +338,31 @@ if not erro_embutido:
             custo_consorcio_corrigido_text = f" ({format_reais(encargos_consorcio_corrigido)}*)"
             vantagem_liquida_corrigido_text = f" ({format_reais(vantagem_liquida_sem_lance_corrigido)}*)"
 
+            # --- Custo se optar por amortizar o PRAZO (mesma prestação, menos meses) com INPC ---
+            num_anos_sem = (prazo_com_contemplacao_sem + 11) // 12
+            total_parcelas_amort_prazo_sem = sum(
+                min(12, prazo_com_contemplacao_sem - ano * 12) * parcela_sem_lance * (fator_anual ** ano)
+                for ano in range(num_anos_sem)
+            )
+            custo_amort_prazo_sem_corrigido = total_parcelas_amort_prazo_sem + valor_lance_padrao
+            diferenca_amort_prazo_sem = custo_amort_prazo_sem_corrigido - custo_corrigido_sem_lance_total
+
+            num_anos_com = (prazo_com_contemplacao_com + 11) // 12
+            total_parcelas_amort_prazo_com = sum(
+                min(12, prazo_com_contemplacao_com - ano * 12) * parcela_sem_contemplacao_embutido * (fator_anual ** ano)
+                for ano in range(num_anos_com)
+            )
+            custo_amort_prazo_com_corrigido = total_parcelas_amort_prazo_com + valor_lance_proprio_com_calc
+            diferenca_amort_prazo_com = custo_amort_prazo_com_corrigido - custo_corrigido_com_lance_total
+
+            sinal_sem = "menor" if diferenca_amort_prazo_sem < 0 else "maior"
+            sinal_com = "menor" if diferenca_amort_prazo_com < 0 else "maior"
+            texto_diferenca_amort_prazo = (
+                f"\n**Se optar por amortizar o prazo** (mesma prestação, menos meses, c/ INPC):\n"
+                f"- Sem Lance: {format_reais(custo_amort_prazo_sem_corrigido)} (diferença: {format_reais(abs(diferenca_amort_prazo_sem))} {sinal_sem} que amort. parcela)\n"
+                f"- Com Lance: {format_reais(custo_amort_prazo_com_corrigido)} (diferença: {format_reais(abs(diferenca_amort_prazo_com))} {sinal_com} que amort. parcela)\n"
+            )
+
         valor_principal_financiamento = valor_financiamento_base - valor_entrada_financiamento
         taxa_mensal_financiamento = (1 + taxa_juros_financiamento / 100)**(1/12) - 1
         if taxa_mensal_financiamento > 0:
@@ -331,6 +371,15 @@ if not erro_embutido:
             parcela_financiamento = valor_principal_financiamento / prazo_financiamento
         
         custo_total_financiamento = (parcela_financiamento * prazo_financiamento) + valor_entrada_financiamento
+        
+        cet_anual = taxa_juros_financiamento + cet_acrescimo
+        taxa_mensal_cet = (1 + cet_anual / 100)**(1/12) - 1
+        if taxa_mensal_cet > 0:
+            parcela_financiamento_cet = valor_principal_financiamento * taxa_mensal_cet / (1 - (1 + taxa_mensal_cet)**-prazo_financiamento)
+        else:
+            parcela_financiamento_cet = valor_principal_financiamento / prazo_financiamento
+        custo_total_financiamento_cet = (parcela_financiamento_cet * prazo_financiamento) + valor_entrada_financiamento
+        custo_financiamento_cet_text = f" | Corrigido CET ({format_reais(custo_total_financiamento_cet)})"
         
         diferenca_custo_total = custo_total_financiamento - total_sem_lance
         diferenca_parcela_comparativo = parcela_financiamento - parcela_padrao
@@ -364,11 +413,18 @@ if not erro_embutido:
             bloco_analise_custo_pdf += f"| Sem Lance Embutido | {format_reais(custo_sem_lance_sem_inpc_total)}{custo_sem_lance_inpc_text} |\n"
         if incluir_com_lance:
             bloco_analise_custo_pdf += f"| Com Lance Embutido | {format_reais(custo_com_lance_sem_inpc_total)}{custo_com_lance_inpc_text} |\n"
+        if usar_inpc and fator_inpc_pct > 0 and (incluir_sem_lance or incluir_com_lance):
+            bloco_analise_custo_pdf += "\n**Se optar por amortizar o prazo** (mesma prestação, menos meses, c/ INPC):\n"
+            if incluir_sem_lance:
+                bloco_analise_custo_pdf += f"- Sem Lance: {format_reais(custo_amort_prazo_sem_corrigido)} (diferença: {format_reais(abs(diferenca_amort_prazo_sem))} {sinal_sem} que amort. parcela)\n"
+            if incluir_com_lance:
+                bloco_analise_custo_pdf += f"- Com Lance: {format_reais(custo_amort_prazo_com_corrigido)} (diferença: {format_reais(abs(diferenca_amort_prazo_com))} {sinal_com} que amort. parcela)\n"
         if incluir_comparativo_financiamento:
-            bloco_analise_custo_pdf += f"| Financiamento | {format_reais(custo_total_financiamento)} |\n"
-        
+            bloco_analise_custo_pdf += f"\n| Financiamento | {format_reais(custo_total_financiamento)}{custo_financiamento_cet_text} |\n\n"
         if usar_inpc:
-             bloco_analise_custo_pdf += f"\nPercentual de acréscimo INPC durante o período: {total_inpc_percentual:.2f}%\n"
+             if not incluir_comparativo_financiamento:
+                 bloco_analise_custo_pdf += "\n"
+             bloco_analise_custo_pdf += f"INPC durante o período: {total_inpc_percentual:.2f}%\n\n"
 
         bloco_analise_custo_extra_pdf = ""
         
@@ -376,20 +432,23 @@ if not erro_embutido:
 Cenário: Sem Lance Embutido
 Valor do crédito: {format_reais(valor_carta_float)}
 Parcela mensal (sem contemplação): {format_reais(parcela_sem_lance)}
-Parcela com contemplação ({lance_proprio_sem}%): {format_reais(parcela_padrao)}
+▸ Se amortizar parcela ({lance_proprio_sem}%): {format_reais(parcela_padrao)}
 Valor do lance: {format_reais(valor_lance_padrao)}
 Prazo: {prazo} meses
+▸ Se amortizar prazo ({lance_proprio_sem}%): {prazo_com_contemplacao_sem} meses
 """
+        lance_total_pct = int(lance_proprio_com) + int(lance_embutido)
         bloco_com_lance_pdf = f"""
 Cenário: Com Lance Embutido
 Valor do crédito: {format_reais(valor_carta_float)}
 Valor da carta AJUSTADA para Lance Embutido: {format_reais(valor_carta_ajustado_para_embutido)}
 Parcela mensal (sem contemplação): {format_reais(parcela_sem_contemplacao_embutido)}
-Parcela com contemplação ({int(lance_proprio_com) + int(lance_embutido)}%): {format_reais(parcela_contemplacao_total)}
+▸ Se amortizar parcela ({lance_total_pct}%): {format_reais(parcela_contemplacao_total)}
 Lance Próprio ({int(lance_proprio_com)}%): {format_reais(valor_lance_proprio_com_calc)}
 Lance Embutido ({int(lance_embutido)}%): {format_reais(valor_lance_embutido_com_calc)}
 Valor TOTAL do lance: {format_reais(valor_total_lance_calc)}
 Prazo: {prazo} meses
+▸ Se amortizar prazo ({lance_total_pct}%): {prazo_com_contemplacao_com} meses
 """
             
         bloco_analise_vantagem_pdf = f"""
@@ -409,8 +468,9 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
     - Valor Financiado: {format_reais(valor_principal_financiamento)}
     - Parcela Mensal: {format_reais(parcela_financiamento)}
     - Taxa de Juros Anual: {taxa_juros_financiamento:.2f}% | Mensal: {taxa_mensal_financiamento * 100:.2f}%
+    - CET anual: {cet_anual:.2f}% | CET mensal: {taxa_mensal_cet * 100:.2f}%
     - Prazo: {prazo_financiamento} meses
-    - Total Pago: {format_reais(custo_total_financiamento)}
+    - Total Pago (CET): {format_reais(custo_total_financiamento_cet)}
 """
         
         bloco_observacoes_pdf = f"""
@@ -462,6 +522,7 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
         styles.add(ParagraphStyle(name='CustomSubtitle', fontName='Helvetica', fontSize=12, textColor=(0.33, 0.33, 0.33), spaceAfter=24, alignment=0))
         styles.add(ParagraphStyle(name='CustomHeading', fontName='Helvetica-Bold', fontSize=14, spaceBefore=12, spaceAfter=6, alignment=0))
         styles.add(ParagraphStyle(name='NormalText', fontName='Helvetica', fontSize=10, spaceAfter=6, alignment=0))
+        styles.add(ParagraphStyle(name='DestaqueText', fontName='Helvetica-Bold', fontSize=10, spaceAfter=6, alignment=0))
         styles.add(ParagraphStyle(name='SmallText', fontName='Helvetica', fontSize=9, spaceAfter=6, alignment=0))
 
         doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=inch, leftMargin=inch, topMargin=inch, bottomMargin=inch)
@@ -476,6 +537,8 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
                 clean_line = re.sub(r'^Cenário: ', '', line)
                 if "Cenário:" in line:
                     Story.append(Paragraph(clean_line, styles['CustomHeading']))
+                elif "Se amortizar" in line or line.strip().startswith("▸"):
+                    Story.append(Paragraph(clean_line, styles['DestaqueText']))
                 else:
                     Story.append(Paragraph(clean_line, styles['NormalText']))
             Story.append(Spacer(1, 12))
@@ -486,6 +549,8 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
                 clean_line = re.sub(r'^Cenário: ', '', line)
                 if "Cenário:" in line:
                     Story.append(Paragraph(clean_line, styles['CustomHeading']))
+                elif "Se amortizar" in line or line.strip().startswith("▸"):
+                    Story.append(Paragraph(clean_line, styles['DestaqueText']))
                 else:
                     Story.append(Paragraph(clean_line, styles['NormalText']))
             Story.append(Spacer(1, 12))
@@ -550,7 +615,7 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
                 unsafe_allow_html=True,
             )
             st.markdown("### 🔍 Análise visual da vantagem financeira")
-            st.caption("Altere a taxa de juros ou o INPC abaixo: os valores são replicados automaticamente no painel principal e no resultado da simulação (uma única simulação para o cliente).")
+            st.markdown("<p style='font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 0.4rem;'>Lembrete: para proposta sem lance embutido e amortizando a prestação.</p><p style='font-size: 0.8rem; color: #64748b; margin-top: 0; margin-bottom: 1.4rem;'>Altere a taxa de juros ou o INPC abaixo: os valores são replicados automaticamente no painel principal e no resultado da simulação (uma única simulação para o cliente).</p>", unsafe_allow_html=True)
 
             # Controles sincronizados com o painel principal (alterar aqui atualiza a simulação toda)
             col_ctrl1, col_ctrl2 = st.columns(2)
@@ -592,13 +657,11 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
             vantagem_liquida_lab_corrigida = None
             if fator_inpc_lab > 0:
                 fator_anual_lab = 1 + fator_inpc_lab / 100
-
-                total_acrescimo_sem_lance_lab = 0
-                for i in range(1, prazo + 1):
-                    ano = (i - 1) // 12
-                    parcela_corrigida_lab = parcela_padrao * (fator_anual_lab ** ano)
-                    total_acrescimo_sem_lance_lab += (parcela_corrigida_lab - parcela_padrao)
-
+                num_anos_lab = (prazo + 11) // 12
+                total_acrescimo_sem_lance_lab = sum(
+                    min(12, prazo - ano * 12) * parcela_padrao * ((fator_anual_lab ** ano) - 1)
+                    for ano in range(num_anos_lab)
+                )
                 custo_corrigido_sem_lance_total_lab = custo_sem_lance_sem_inpc_total + total_acrescimo_sem_lance_lab
                 encargos_consorcio_corrigido_lab = custo_corrigido_sem_lance_total_lab - valor_carta_float
                 vantagem_liquida_lab_corrigida = ganho_lab - encargos_consorcio_corrigido_lab
@@ -613,14 +676,18 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
             prazo_anos = prazo / 12
             vantagem_liquida_lab_sem_inpc = ganho_lab - encargos_consorcio_sem_lance
 
-            # Ponto de inversão: primeiro mês em que os juros mensais da aplicação superam a parcela
+            # Ponto de inversão: primeiro mês em que os juros mensais da aplicação superam a parcela (fórmula fechada)
             mes_inversao = None
-            for m in range(1, int(prazo) + 1):
-                valor_aplicacao_mes = saldo_para_aplicar_sem_lance * ((1 + taxa_juros_mensal_lab) ** m)
-                juros_mensais = valor_aplicacao_mes * taxa_juros_mensal_lab
-                if juros_mensais >= parcela_padrao:
-                    mes_inversao = m
-                    break
+            if taxa_juros_mensal_lab > 0 and saldo_para_aplicar_sem_lance > 0 and parcela_padrao > 0:
+                denom = saldo_para_aplicar_sem_lance * taxa_juros_mensal_lab
+                if denom > 0:
+                    if parcela_padrao / denom <= 1:
+                        mes_inversao = 1  # juros do 1º mês já superam a parcela
+                    else:
+                        m_float = math.log(parcela_padrao / denom) / math.log(1 + taxa_juros_mensal_lab)
+                        m_int = max(1, math.ceil(m_float))
+                        if m_int <= int(prazo):
+                            mes_inversao = m_int
 
             # ----- Patrimônio final comparativo -----
             st.markdown("##### Patrimônio final comparativo")
