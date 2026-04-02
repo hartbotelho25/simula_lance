@@ -35,6 +35,7 @@ st.markdown("""
     .stMarkdown { margin-bottom: 0 !important; margin-top: 0.2rem !important; }
     .stMarkdown h3 { margin-top: 0.4rem !important; margin-bottom: 0.3rem !important; }
     hr { margin: 0.4rem 0 !important; }
+    .renda-fixa-promo a:hover { filter: brightness(1.06); }
     </style>
     """, unsafe_allow_html=True)
 
@@ -50,9 +51,15 @@ if "sync_from_detail" not in st.session_state:
     st.session_state.sync_from_detail = False
 st.markdown("""
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
-    <div style="font-family: 'Outfit', sans-serif; text-align: center;">
-        <p style="font-size: 1.12rem; color: #334155; letter-spacing: 0.12em; font-weight: 600; margin: 0 0 0.6rem 0; text-transform: uppercase;">Desenvolvido por Hart Botelho, CFP®</p>
-        <p style="font-size: 0.95rem; color: #64748b; letter-spacing: 0.04em; font-weight: 400; margin: 0;">Conheça também o <a href="https://simula-rendafixa.streamlit.app/" target="_blank" rel="noopener noreferrer" style="color: #64748b; text-decoration: underline;">simulador de Renda Fixa</a>.</p>
+    <div style="font-family: 'Outfit', sans-serif;">
+        <p style="text-align: center; font-size: 1.12rem; color: #334155; letter-spacing: 0.12em; font-weight: 600; margin: 0 0 0.45rem 0; text-transform: uppercase;">Desenvolvido por Hart Botelho, CFP®</p>
+        <div class="renda-fixa-promo" style="margin: 0 0 0.15rem 0; max-width: 100%; padding: 0.22rem 0.4rem; background: #f8fbff; border: 1px solid #e2e8f0; border-radius: 6px; box-shadow: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 0.3rem 0.45rem;">
+            <span style="font-size: 0.8rem; color: #b91c1c; font-weight: 600; line-height: 1.2; margin: 0;">Conheça também o <strong>simulador de Renda Fixa</strong></span>
+            <a href="https://simula-rendafixa.streamlit.app/" target="_blank" rel="noopener noreferrer"
+               style="display: inline-block; box-sizing: border-box; flex-shrink: 0; padding: 0.2rem 0.45rem; font-size: 0.74rem; font-weight: 600; color: #1d4ed8; background: #ffffff; border-radius: 5px; text-decoration: none; cursor: pointer; border: 1px solid #bfdbfe;">
+                Abrir simulador
+            </a>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
