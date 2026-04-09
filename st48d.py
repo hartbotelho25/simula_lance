@@ -533,7 +533,7 @@ Prazo: {prazo} meses
         Total das parcelas pagas (com INPC): {format_reais(total_parcelas_com_inpc_b4)}
         • Total desembolsado no consórcio (INPC) (parcelas + lance): {format_reais(total_desembolsado_sel_b4)}
 
-        Saldo Final em Conta: {format_reais(saldo_final_conta_b4)}
+        Resultado líquido da aplicação após o pagamento das parcelas: {format_reais(saldo_final_conta_b4)}
 
 {observacao_vantagem}
 """
@@ -654,7 +654,7 @@ Prazo: {prazo} meses
                 if not stripped:
                     Story.append(Spacer(1, 10))
                     continue
-                if "Saldo Final em Conta" in stripped:
+                if "Resultado líquido da aplicação após o pagamento das parcelas" in stripped:
                     Story.append(Paragraph(stripped, styles['DestaqueText']))
                 else:
                     Story.append(Paragraph(line, styles['NormalText']))
