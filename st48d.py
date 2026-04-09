@@ -3,7 +3,6 @@ from streamlit.components.v1 import html as st_components_html
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import io
-import math
 import re
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -28,14 +27,19 @@ st.set_page_config(page_title="Simulador de Consórcio", layout="wide")
 # Layout compacto: reduz ao máximo o espaço entre blocos
 st.markdown("""
     <style>
-    section.main .block-container { padding-top: 1rem; padding-bottom: 0.5rem; max-width: 100%; }
+    section.main .block-container { padding-top: 0.85rem; padding-bottom: 0.5rem; padding-left: 1.5rem; padding-right: 1.5rem; max-width: 100%; }
+    div[data-testid="stHorizontalBlock"] { gap: 0.75rem !important; }
+    div[data-testid="column"] { min-width: 0; }
     div[data-testid="stVerticalBlock"] > div { padding-top: 0 !important; padding-bottom: 0 !important; }
     div[data-testid="stVerticalBlock"] { gap: 0 !important; }
-    div[data-testid="element-container"] { margin-bottom: -0.5rem !important; padding-bottom: 0 !important; }
+    div[data-testid="element-container"] { margin-bottom: -0.35rem !important; padding-bottom: 0 !important; }
     .stMarkdown { margin-bottom: 0 !important; margin-top: 0.2rem !important; }
-    .stMarkdown h3 { margin-top: 0.4rem !important; margin-bottom: 0.3rem !important; }
-    hr { margin: 0.4rem 0 !important; }
+    .stMarkdown h3 { margin-top: 0.35rem !important; margin-bottom: 0.25rem !important; }
+    hr { margin: 0.35rem 0 !important; }
     .renda-fixa-promo a:hover { filter: brightness(1.06); }
+    /* Cenário [4]: rádio discreto (único st.radio da página) */
+    [data-testid="stRadio"] label { font-size: 0.78rem !important; color: #64748b !important; font-weight: 400 !important; line-height: 1.25 !important; }
+    [data-testid="stRadio"] [data-baseweb="radio"] { gap: 0.2rem !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -63,6 +67,12 @@ st.markdown("""
     </div>
     """, unsafe_allow_html=True)
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
+st.markdown(
+    "<p style='text-align: center; font-size: 0.88rem; color: #64748b; margin: 0.15rem 0 0.5rem 0;'>"
+    "Novidade em 07/04/2026 - Opção de Vantagem financeira com cenário de lance embutido"
+    "</p>",
+    unsafe_allow_html=True,
+)
 st.markdown("### 📋 Informações da Simulação")
 
 col_form, col_lance = st.columns([2, 1])
@@ -75,10 +85,12 @@ with col_form:
     tipo = st.selectbox("Tipo de Bem", ["Imóvel", "Veículo"])
     
     if tipo != st.session_state.tipo_anterior:
-        if tipo == "Imóvel":
-            st.session_state.prazo = 200
-        else:
+        if tipo == "Veículo":
+            # Padrão mais usado em veículos; o usuário pode alterar no campo (até o máximo do tipo)
             st.session_state.prazo = 80
+        else:
+            prazo_cap_tipo = 240
+            st.session_state.prazo = min(int(st.session_state.prazo), prazo_cap_tipo)
         st.session_state.tipo_anterior = tipo
     
     col1, col2 = st.columns(2)
@@ -125,9 +137,9 @@ with col_form:
 with col_lance:
     try:
         valor_carta_float_preview = float(st.session_state.valor_carta.replace(".", "").replace(",", "."))
-    except:
+    except (ValueError, AttributeError, KeyError):
         valor_carta_float_preview = 0.0
-    
+
     st.markdown("### 🎯 Sem Lance Embutido")
     col_sem1, col_sem2 = st.columns([1, 1])
     with col_sem1:
@@ -291,9 +303,16 @@ if not erro_embutido:
         saldo_para_aplicar_sem_lance = valor_carta_float - valor_lance_padrao
         rendimento_aplicacao_sem_lance = saldo_para_aplicar_sem_lance * ((1 + taxa_juros_mensal)**prazo)
         ganho_aplicacao_sem_lance = rendimento_aplicacao_sem_lance - saldo_para_aplicar_sem_lance
+
+        # Com lance embutido: valor a aplicar = valor da carta (nominal) − recurso próprio (lance próprio em R$ no bloco com embutido)
+        saldo_para_aplicar_com_lance = max(0.0, valor_carta_float - valor_lance_proprio_com_calc)
+        rendimento_aplicacao_com_lance = saldo_para_aplicar_com_lance * ((1 + taxa_juros_mensal)**prazo)
+        ganho_aplicacao_com_lance = rendimento_aplicacao_com_lance - saldo_para_aplicar_com_lance
         
         encargos_consorcio_sem_lance = custo_sem_lance_sem_inpc_total - valor_carta_float
         vantagem_liquida_sem_lance_original = ganho_aplicacao_sem_lance - encargos_consorcio_sem_lance
+        encargos_consorcio_com_lance_sem_inpc = custo_com_lance_sem_inpc_total - valor_carta_float
+        vantagem_liquida_com_lance_original = ganho_aplicacao_com_lance - encargos_consorcio_com_lance_sem_inpc
         
         custo_sem_lance_inpc_text = ""
         custo_com_lance_inpc_text = ""
@@ -326,6 +345,9 @@ if not erro_embutido:
             
             
             vantagem_liquida_sem_lance_corrigido = ganho_aplicacao_sem_lance - encargos_consorcio_corrigido
+
+            encargos_consorcio_com_corrigido = custo_corrigido_com_lance_total - valor_carta_float
+            vantagem_liquida_com_lance_corrigido = ganho_aplicacao_com_lance - encargos_consorcio_com_corrigido
             
             prazo_em_anos = prazo / 12
             total_inpc_percentual = ((1 + fator_inpc_pct / 100)**prazo_em_anos - 1) * 100
@@ -396,6 +418,17 @@ if not erro_embutido:
             incluir_comparativo_financiamento = st.checkbox("[3] Financiamento", value=True, key="incluir_comparativo")
         with col_pdf4:
             incluir_analise_vantagem = st.checkbox("[4] Vantagem Financeira", value=True, key="incluir_analise_vantagem")
+            st.markdown(
+                '<p style="font-size:0.7rem;color:#94a3b8;margin:0.35rem 0 0.05rem 0;line-height:1.2;">Cenário</p>',
+                unsafe_allow_html=True,
+            )
+            cenario_vantagem = st.radio(
+                "Cenário vantagem [4]",
+                ["Sem Lance Embutido", "Com Lance Embutido"],
+                key="cenario_vantagem_financeira",
+                label_visibility="collapsed",
+                help="Bloco [4]: números do cenário sem ou com lance embutido (valor a aplicar = valor da carta − lance próprio em R$ no bloco com embutido).",
+            )
         with col_pdf5:
             incluir_analise_custo = st.checkbox("[5] Análise de Custo", value=True, key="incluir_analise_custo")
         with col_pdf6:
@@ -448,12 +481,11 @@ Prazo: {prazo} meses
 ▸ Se amortizar prazo ({lance_total_pct}%): {prazo_com_contemplacao_com} meses
 """
             
-        # Bloco [4]: sempre exibir valores corrigidos por INPC quando fator_inpc_pct > 0 (realidade)
+        # Bloco [4]: totais desembolsados (INPC quando aplicável) para o cenário sem/com
         if fator_inpc_pct > 0:
             if usar_inpc:
                 total_desembolsado_sem_b4 = custo_corrigido_sem_lance_total
                 total_desembolsado_com_b4 = custo_corrigido_com_lance_total
-                vantagem_corrigida_b4 = vantagem_liquida_sem_lance_corrigido
             else:
                 fator_anual_b4 = 1 + fator_inpc_pct / 100
                 num_anos_b4 = (prazo + 11) // 12
@@ -461,54 +493,49 @@ Prazo: {prazo} meses
                 tac_com_b4 = sum(min(12, prazo - ano * 12) * parcela_contemplacao_total * ((fator_anual_b4 ** ano) - 1) for ano in range(num_anos_b4))
                 total_desembolsado_sem_b4 = custo_sem_lance_sem_inpc_total + tac_sem_b4
                 total_desembolsado_com_b4 = custo_com_lance_sem_inpc_total + tac_com_b4
-                encargos_b4 = total_desembolsado_sem_b4 - valor_carta_float
-                vantagem_corrigida_b4 = ganho_aplicacao_sem_lance - encargos_b4
         else:
             total_desembolsado_sem_b4 = custo_sem_lance_sem_inpc_total
             total_desembolsado_com_b4 = custo_com_lance_sem_inpc_total
-            vantagem_corrigida_b4 = vantagem_liquida_sem_lance_original
 
-        total_parcelas_com_inpc_b4 = total_desembolsado_sem_b4 - valor_lance_padrao
-        economia_mensal_b4 = vantagem_corrigida_b4 / prazo if prazo > 0 else 0
-        preco_efetivo_bem_b4 = valor_carta_float - vantagem_corrigida_b4 if valor_carta_float > 0 else 0
-        desconto_efetivo_pct_b4 = (vantagem_corrigida_b4 / valor_carta_float * 100) if valor_carta_float > 0 else 0
-        mes_inversao_b4 = None
-        taxa_juros_mensal_b4 = (1 + taxa_juros_anual / 100)**(1/12) - 1
-        if taxa_juros_mensal_b4 > 0 and saldo_para_aplicar_sem_lance > 0 and parcela_padrao > 0:
-            denom_b4 = saldo_para_aplicar_sem_lance * taxa_juros_mensal_b4
-            if denom_b4 > 0:
-                if parcela_padrao / denom_b4 <= 1:
-                    mes_inversao_b4 = 1
-                else:
-                    m_float_b4 = math.log(parcela_padrao / denom_b4) / math.log(1 + taxa_juros_mensal_b4)
-                    m_int_b4 = max(1, math.ceil(m_float_b4))
-                    if m_int_b4 <= int(prazo):
-                        mes_inversao_b4 = m_int_b4
-        if mes_inversao_b4 is not None:
-            linha_inversao_b4 = (
-                f"A partir do mês {mes_inversao_b4}, os juros mensais da aplicação passam a superar a "
-                f"parcela: o investimento passa a \"pagar\" o consórcio."
-            )
+        usar_vantagem_com = cenario_vantagem == "Com Lance Embutido"
+        if usar_vantagem_com:
+            saldo_para_aplicar_b4 = saldo_para_aplicar_com_lance
+            ganho_aplicacao_b4 = ganho_aplicacao_com_lance
+            total_desembolsado_sel_b4 = total_desembolsado_com_b4
+            total_parcelas_com_inpc_b4 = total_desembolsado_com_b4 - valor_lance_proprio_com_calc
+            titulo_cenario_vantagem = "COM LANCE EMBUTIDO"
         else:
-            linha_inversao_b4 = ""
-        bloco_analise_vantagem_pdf = f"""
-    **ATENÇÃO** **CENÁRIO SEM LANCE EMBUTIDO**
+            saldo_para_aplicar_b4 = saldo_para_aplicar_sem_lance
+            ganho_aplicacao_b4 = ganho_aplicacao_sem_lance
+            total_desembolsado_sel_b4 = total_desembolsado_sem_b4
+            total_parcelas_com_inpc_b4 = total_desembolsado_sem_b4 - valor_lance_padrao
+            titulo_cenario_vantagem = "SEM LANCE EMBUTIDO"
 
-        Valor para aplicar: {format_reais(saldo_para_aplicar_sem_lance)}
-        Rendimento da aplicação: {format_reais(ganho_aplicacao_sem_lance)}
-        Montante: {format_reais(saldo_para_aplicar_sem_lance + ganho_aplicacao_sem_lance)}
+        # Lucro Real = rendimento da aplicação − parcelas corrigidas (INPC); o lance já está fora das parcelas e não duplica nesta diferença
+        montante_b4 = saldo_para_aplicar_b4 + ganho_aplicacao_b4
+        vantagem_lucro_real_b4 = ganho_aplicacao_b4 - total_parcelas_com_inpc_b4
+        saldo_final_conta_b4 = vantagem_lucro_real_b4 + saldo_para_aplicar_b4
+
+        observacao_vantagem = (
+            "Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao invés de usar o valor total à vista, "
+            "o cliente utiliza parte do recurso para dar o lance, e o restante é aplicado em um investimento de renda fixa. "
+            "A análise compara o rendimento dessa aplicação com os encargos do consórcio, demonstrando a vantagem financeira líquida da operação."
+        )
+
+        # [4] Idêntico para Imóvel e Veículo (sem ramificação por tipo): Lucro Real só entra nos cálculos; destaque = Saldo Final em Conta
+        bloco_analise_vantagem_pdf = f"""
+    **ATENÇÃO** **CENÁRIO {titulo_cenario_vantagem}**
+
+        Valor para aplicar: {format_reais(saldo_para_aplicar_b4)}
+        Rendimento da aplicação: {format_reais(ganho_aplicacao_b4)}
+        Montante: {format_reais(saldo_para_aplicar_b4 + ganho_aplicacao_b4)}
 
         Total das parcelas pagas (com INPC): {format_reais(total_parcelas_com_inpc_b4)}
-        • Total desembolsado no consórcio (INPC) (parcelas + lance): {format_reais(total_desembolsado_sem_b4)}
-        Vantagem líquida (Corrigida INPC): {format_reais(vantagem_corrigida_b4)}
+        • Total desembolsado no consórcio (INPC) (parcelas + lance): {format_reais(total_desembolsado_sel_b4)}
 
-        Compre com desconto de: ({desconto_efetivo_pct_b4:.2f}%)
-        Custo Efetivo de Aquisição: {format_reais(preco_efetivo_bem_b4)}
+        Saldo Final em Conta: {format_reais(saldo_final_conta_b4)}
 
-        Economia mensal: {format_reais(economia_mensal_b4)}
-        {linha_inversao_b4}
-
-Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao invés de usar o valor total à vista, o cliente utiliza parte do recurso para dar o lance, e o restante é aplicado em um investimento de renda fixa. A análise compara o rendimento dessa aplicação com os encargos do consórcio, demonstrando a vantagem financeira líquida da operação.
+{observacao_vantagem}
 """
             
         bloco_comparativo_financiamento_pdf = f"""
@@ -623,7 +650,14 @@ Observação: Este item ilustra a estratégia de 'não descapitalização'. Ao i
             bloco_obs = "Observação" + bloco_analise_vantagem_pdf.split("Observação")[1]
             
             for line in bloco_vantagem_sem_obs_limpo.strip().split('\n'):
-                 Story.append(Paragraph(line, styles['NormalText']))
+                stripped = line.strip()
+                if not stripped:
+                    Story.append(Spacer(1, 10))
+                    continue
+                if "Saldo Final em Conta" in stripped:
+                    Story.append(Paragraph(stripped, styles['DestaqueText']))
+                else:
+                    Story.append(Paragraph(line, styles['NormalText']))
 
             Story.append(Spacer(1, 6))
             Story.append(Paragraph(bloco_obs, styles['SmallText']))
