@@ -22,6 +22,10 @@ def format_input_valor(valor_str):
     except ValueError:
         return valor_str
 
+def normalizar_capital_preservado_manual():
+    valor_atual = st.session_state.get("capital_preservado_aplicacao_raw", "")
+    st.session_state.capital_preservado_aplicacao_raw = format_input_valor(valor_atual)
+
 st.set_page_config(page_title="Simulador de Consórcio", layout="wide")
 
 # Layout compacto: reduz ao máximo o espaço entre blocos
@@ -53,6 +57,14 @@ if "fator_inpc_pct" not in st.session_state:
 # Flag: True só quando o slide do detalhe atualizou os canônicos (para não sobrescrever edição do menu principal)
 if "sync_from_detail" not in st.session_state:
     st.session_state.sync_from_detail = False
+if "cenario_vantagem_financeira" not in st.session_state:
+    st.session_state.cenario_vantagem_financeira = "Sem Lance Embutido"
+if "cenario_vantagem_anterior" not in st.session_state:
+    st.session_state.cenario_vantagem_anterior = st.session_state.cenario_vantagem_financeira
+if "capital_preservado_aplicacao" not in st.session_state:
+    st.session_state.capital_preservado_aplicacao = 0.0
+if "capital_preservado_manual" not in st.session_state:
+    st.session_state.capital_preservado_manual = False
 st.markdown("""
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
     <div style="font-family: 'Outfit', sans-serif;">
@@ -69,7 +81,7 @@ st.markdown("""
 st.markdown("<h1 style='text-align: center; color: #2c3e50;'>Simulador de Consórcio</h1>", unsafe_allow_html=True)
 st.markdown(
     "<p style='text-align: center; font-size: 0.88rem; color: #64748b; margin: 0.15rem 0 0.5rem 0;'>"
-    "Novidade em 07/04/2026 - Opção de Vantagem financeira com cenário de lance embutido"
+    "Novidade em 26/04/2026 - Vantagem financeira - Possibilidade de ajuste manual de valor - Capital preservado para aplicação."
     "</p>",
     unsafe_allow_html=True,
 )
@@ -89,8 +101,8 @@ with col_form:
             # Padrão mais usado em veículos; o usuário pode alterar no campo (até o máximo do tipo)
             st.session_state.prazo = 80
         else:
-            prazo_cap_tipo = 240
-            st.session_state.prazo = min(int(st.session_state.prazo), prazo_cap_tipo)
+            # Ao retornar para imóvel, volta ao valor inicial padrão
+            st.session_state.prazo = 200
         st.session_state.tipo_anterior = tipo
     
     col1, col2 = st.columns(2)
@@ -104,7 +116,44 @@ with col_form:
 
         if prazo > prazo_maximo:
             st.info(f"O prazo máximo para {tipo.lower()} é de {prazo_maximo} meses.")
-        
+
+        try:
+            valor_carta_float_base = float(st.session_state.valor_carta.replace(".", "").replace(",", "."))
+        except (ValueError, AttributeError, KeyError):
+            valor_carta_float_base = 0.0
+
+        lance_proprio_sem_base = float(st.session_state.get("sem_lance", st.session_state.get("lance_proprio_sem", 10)))
+        capital_preservado_sem_default = max(0.0, valor_carta_float_base - (valor_carta_float_base * (lance_proprio_sem_base / 100)))
+        cenario_vantagem_atual = st.session_state.get("cenario_vantagem_financeira", "Sem Lance Embutido")
+
+        if "capital_preservado_aplicacao_raw" not in st.session_state:
+            st.session_state.capital_preservado_aplicacao_raw = "0"
+
+        informar_manual = st.session_state.get("capital_preservado_manual", False)
+        # Quando não estiver manual, mantém zerado e bloqueado para edição
+        if not informar_manual:
+            st.session_state.capital_preservado_aplicacao_raw = "0"
+
+        if st.session_state.get("cenario_vantagem_anterior") != cenario_vantagem_atual:
+            if not informar_manual:
+                st.session_state.capital_preservado_aplicacao_raw = "0"
+            st.session_state.cenario_vantagem_anterior = cenario_vantagem_atual
+
+        capital_preservado_input = st.text_input(
+            "Capital Preservado para Aplicação (vantagem financeira) ✨",
+            key="capital_preservado_aplicacao_raw",
+            disabled=not informar_manual,
+            on_change=normalizar_capital_preservado_manual
+        )
+        st.checkbox("Informar manualmente", key="capital_preservado_manual")
+        capital_preservado_formatado = format_input_valor(capital_preservado_input)
+        try:
+            st.session_state.capital_preservado_aplicacao = float(
+                capital_preservado_formatado.replace(".", "").replace(",", ".")
+            )
+        except ValueError:
+            st.session_state.capital_preservado_aplicacao = 0.0
+
         observacoes = st.text_area("Observações Adicionais", height=70)
 
     with col2:
@@ -300,12 +349,21 @@ if not erro_embutido:
         diferenca_parcela_pos_contemplacao = parcela_contemplacao_total - parcela_padrao
 
         taxa_juros_mensal = (1 + taxa_juros_anual / 100)**(1/12) - 1
-        saldo_para_aplicar_sem_lance = valor_carta_float - valor_lance_padrao
+        informar_manual_capital = st.session_state.get("capital_preservado_manual", False)
+        capital_preservado_aplicacao = max(0.0, float(st.session_state.get("capital_preservado_aplicacao", 0.0)))
+
+        if informar_manual_capital:
+            saldo_para_aplicar_sem_lance = capital_preservado_aplicacao
+            saldo_para_aplicar_com_lance = capital_preservado_aplicacao
+        else:
+            # Regra antiga no cenário sem lance embutido: carta - lance próprio (sem lance)
+            saldo_para_aplicar_sem_lance = max(0.0, valor_carta_float - valor_lance_padrao)
+            # Sem preenchimento manual, cenário com lance permanece zerado
+            saldo_para_aplicar_com_lance = 0.0
+
         rendimento_aplicacao_sem_lance = saldo_para_aplicar_sem_lance * ((1 + taxa_juros_mensal)**prazo)
         ganho_aplicacao_sem_lance = rendimento_aplicacao_sem_lance - saldo_para_aplicar_sem_lance
 
-        # Com lance embutido: valor a aplicar = valor da carta (nominal) − recurso próprio (lance próprio em R$ no bloco com embutido)
-        saldo_para_aplicar_com_lance = max(0.0, valor_carta_float - valor_lance_proprio_com_calc)
         rendimento_aplicacao_com_lance = saldo_para_aplicar_com_lance * ((1 + taxa_juros_mensal)**prazo)
         ganho_aplicacao_com_lance = rendimento_aplicacao_com_lance - saldo_para_aplicar_com_lance
         
@@ -526,14 +584,14 @@ Prazo: {prazo} meses
         bloco_analise_vantagem_pdf = f"""
     **ATENÇÃO** **CENÁRIO {titulo_cenario_vantagem}**
 
-        Valor para aplicar: {format_reais(saldo_para_aplicar_b4)}
+        Capital Preservado para Aplicação: {format_reais(saldo_para_aplicar_b4)}
         Rendimento da aplicação: {format_reais(ganho_aplicacao_b4)}
         Montante: {format_reais(saldo_para_aplicar_b4 + ganho_aplicacao_b4)}
 
-        Total das parcelas pagas (com INPC): {format_reais(total_parcelas_com_inpc_b4)}
-        • Total desembolsado no consórcio (INPC) (parcelas + lance): {format_reais(total_desembolsado_sel_b4)}
+        Fluxo Total de Parcelas (com INPC): {format_reais(total_parcelas_com_inpc_b4)}
 
-        Resultado líquido da aplicação após o pagamento das parcelas: {format_reais(saldo_final_conta_b4)}
+        EFICIÊNCIA DO PROJETO
+        Sobra Líquida (Lucro da Estratégia): {format_reais(saldo_final_conta_b4)}
 
 {observacao_vantagem}
 """
@@ -654,7 +712,7 @@ Prazo: {prazo} meses
                 if not stripped:
                     Story.append(Spacer(1, 10))
                     continue
-                if "Resultado líquido da aplicação após o pagamento das parcelas" in stripped:
+                if "Sobra Líquida (Lucro da Estratégia)" in stripped:
                     Story.append(Paragraph(stripped, styles['DestaqueText']))
                 else:
                     Story.append(Paragraph(line, styles['NormalText']))
